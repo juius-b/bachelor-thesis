@@ -10,8 +10,9 @@ RESIZE_SIZE = (RESIZE_WIDTH, RESIZE_HEIGHT)
 def resize_and_save(open_fp, save_fp):
     with Image.open(open_fp) as im:
         im_resized = im.resize(RESIZE_SIZE, Image.Resampling.BICUBIC)
-
-        im_resized.save(save_fp)
+        # ensure grayscale
+        im_to_save = im_resized.convert("L") if im_resized.mode != "L" else im_resized
+        im_to_save.save(save_fp)
 
 
 fp_root = Path("/mnt/jbrockma/")
