@@ -11,14 +11,6 @@ The following are components of the database that are relevant for creating our 
 - train_val_list.txt: This text file contains the file names of the images that make up both the train and validation set. We need to split this into 70/80 % for the training set and 10/80 % for the validation set.
 - images/images/: This directory contains all the source images from the study. They are 1024 x 1024 pixels and are supposed to be grayscale. However not all of them are grayscale and this has to be ensure so converting to array is no problem later
 
-## Assertions before
-
-Certain things will have to be true for the source database.
-
-- All image files mentioned in the "Image index" column of the Data_Entry_2017_v2020.csv table have to exist
-- All image files mentioned in the test_list.txt file have to exist
-- All image files mentioned in the train_val_list.txt file have to exist
-
 ## Necessary changes
 
 - Data_Entry_2017_v2020.csv
@@ -35,8 +27,6 @@ Certain things will have to be true for the source database.
 - train_val_list.txt
     - Split up into train_list.txt and val_list.txt on a patient level while preserving the mentioned ratio
 
-## Assertions after
-
 ## Pipeline
 
 This produces the npz file containing the label and image arrays.
@@ -45,4 +35,7 @@ This produces the npz file containing the label and image arrays.
 2. With own image data file and own image directory
 3. Open image data file and make file_name the index
 4. For each file name in a text file listing the file names of a subset (e.g. train_list.txt listing the files making up the test set)
-    1. 
+   - Get labels from image data file and add to labels list as NumPy array
+   - Open image and add to images list as NumPy array
+5. Convert labels and images lissts to NumPy arrays
+6. Save arrays to single npz file
