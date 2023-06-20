@@ -1,7 +1,7 @@
 from pathlib import Path
 
-RESIZE_WIDTH = RESIZE_HEIGHT = 256
-RESIZE_SIZE = (RESIZE_WIDTH, RESIZE_HEIGHT)
+WIDTH = HEIGHT = 256
+SIZE = (WIDTH, HEIGHT)
 
 root = Path("/mnt/jbrockma")
 cxr8_root = root / "CXR8"
