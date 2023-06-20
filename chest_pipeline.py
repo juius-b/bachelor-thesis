@@ -31,6 +31,7 @@ def clean_image_data():
     renaming_transformation = {
         "Image Index": "file_name",
         "Finding Labels": "findings",
+        "Patient ID": "patient_id"
     }
     columns_to_keep = [name for name in renaming_transformation.values()]
     cleaned_image_data = (
@@ -39,7 +40,9 @@ def clean_image_data():
         .pipe(transform_to_dummy, column="findings", sep="|")
         .pipe(drop_column, "no finding")
     )
-    return cleaned_image_data
+    chest_image_labels = cleaned_image_data.drop(columns=["patient_id"])
+    chest_image_patients = cleaned_image_data[["file_name", "patient_id"]]
+    return chest_image_labels, chest_image_patients
 
 
 def resize_images():
@@ -80,7 +83,7 @@ def resize_images():
 
 def create_array(image_list_file, labels_file):
     with open(image_list_file) as f:
-        image_file_names = [line.strip() for line in f.readlines()]
+        image_file_names = f.read().splitlines()
 
     n_images = len(image_file_names)
 
@@ -125,15 +128,53 @@ def create_array(image_list_file, labels_file):
     return image_pixels, image_labels
 
 
+# TODO: use piping, better var names
+def split_train_val_list():
+    train_val_list = cxr8_root / "train_val_list.txt"
+
+    with open(train_val_list) as f:
+        train_val_image_names = f.read().splitlines()
+
+    image_patient_ids = pd.read_csv(data_root / "chest" / "image-patients.csv")
+
+    train_val_image_patient_ids = image_patient_ids[image_patient_ids["file_name"].isin(train_val_image_names)]
+
+    patient_ids = train_val_image_patient_ids["patient_id"].unique()
+    patient_ids_series = pd.Series(patient_ids)
+
+    train_patients = patient_ids_series.sample(frac=70 / (70 + 10), random_state=183)
+    val_patients = patient_ids_series[~patient_ids_series.isin(train_patients)]
+
+    train_image_patient_ids = train_val_image_patient_ids[
+        train_val_image_patient_ids["patient_id"].isin(train_patients)]
+    val_image_patient_ids = train_val_image_patient_ids[train_val_image_patient_ids["patient_id"].isin(val_patients)]
+
+    train_file_names = train_image_patient_ids["file_name"]
+    val_file_names = val_image_patient_ids["file_name"]
+
+    # TODO: move writing somewhere else
+    with open(data_root / "chest" / "train_list.txt", "w") as f:
+        f.write("\n".join(train_file_names))
+
+    with open(data_root / "chest" / "val_list.txt", "w") as f:
+        f.write("\n".join(val_file_names))
+
+
 def main():
-    chest_image_labels= clean_image_data()
+    if False:
+        chest_image_labels, chest_image_patients = clean_image_data()
 
-    chest_image_labels.to_csv(data_root / "chest" / "image-labels.csv", index=False)
+        chest_image_labels.to_csv(data_root / "chest" / "image-labels.csv", index=False)
+        chest_image_patients.to_csv(data_root / "chest" / "image-patients.csv", index=False)
 
-    resize_images()
+        resize_images()
 
-    test_images, test_labels = create_array(cxr8_root / "test_list.txt", data_root / "chest-image-data.csv")
-    np.savez(root / "bachelor-thesis-npz" / "test-chest.npz", test_images=test_images, test_labels=test_labels)
+        split_train_val_list()
+
+    train_images, train_labels = create_array(data_root / "chest" / "train_list.txt", data_root / "chest" /"image-labels.csv")
+    val_images, val_labels = create_array(data_root / "chest" / "val_list.txt", data_root / "chest" /"image-labels.csv")
+    test_images, test_labels = create_array(cxr8_root / "test_list.txt", data_root / "chest" / "image-labels.csv")
+    np.savez(root / "bachelor-thesis-npz" / "chest.npz", train_images=train_images, train_labels=train_labels, val_images=val_images, val_labels=val_labels, test_images=test_images, test_labels=test_labels)
 
 
 if __name__ == '__main__':
