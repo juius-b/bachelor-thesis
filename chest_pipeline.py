@@ -173,7 +173,7 @@ def main():
     train_images, train_labels = create_array(data_root / "chest" / "train_list.txt", data_root / "chest" /"image-labels.csv")
     val_images, val_labels = create_array(data_root / "chest" / "val_list.txt", data_root / "chest" /"image-labels.csv")
     test_images, test_labels = create_array(cxr8_root / "test_list.txt", data_root / "chest" / "image-labels.csv")
-    np.savez(root / "bachelor-thesis-npz" / "chest.npz", train_images=train_images, train_labels=train_labels, val_images=val_images, val_labels=val_labels, test_images=test_images, test_labels=test_labels)
+    np.savez_compressed(root / "bachelor-thesis-npz" / "chest.npz", train_images=train_images, train_labels=train_labels, val_images=val_images, val_labels=val_labels, test_images=test_images, test_labels=test_labels)
 
 
 if __name__ == '__main__':
