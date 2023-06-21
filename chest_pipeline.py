@@ -161,15 +161,14 @@ def split_train_val_list():
 
 
 def main():
-    if False:
-        chest_image_labels, chest_image_patients = clean_image_data()
+    chest_image_labels, chest_image_patients = clean_image_data()
 
-        chest_image_labels.to_csv(data_root / "chest" / "image-labels.csv", index=False)
-        chest_image_patients.to_csv(data_root / "chest" / "image-patients.csv", index=False)
+    chest_image_labels.to_csv(data_root / "chest" / "image-labels.csv", index=False)
+    chest_image_patients.to_csv(data_root / "chest" / "image-patients.csv", index=False)
 
-        resize_images()
+    resize_images()
 
-        split_train_val_list()
+    split_train_val_list()
 
     train_images, train_labels = create_array(data_root / "chest" / "train_list.txt", data_root / "chest" /"image-labels.csv")
     val_images, val_labels = create_array(data_root / "chest" / "val_list.txt", data_root / "chest" /"image-labels.csv")
