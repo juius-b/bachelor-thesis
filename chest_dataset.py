@@ -10,7 +10,7 @@ from pathlib import Path
 class ChestVisionDataset(VisionDataset):
     classes = ["atelectasis", "cardiomegaly", "consolidation", "edema", "effusion", "emphysema", "fibrosis", "hernia",
                "infiltration", "mass", "nodule", "pleural_thickening", "pneumonia", "pneumothorax"]
-    splits = set("train", "val", "test")
+    splits = {"train", "val", "test"}
 
     def __init__(self, root: str, split: str = "train", transform: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None):
@@ -20,15 +20,15 @@ class ChestVisionDataset(VisionDataset):
         if self.split not in self.splits:
             raise RuntimeError("Dataset split not recognized. Must be one of train, val or test")
 
-        self.data, self.targets = self._load_data()
+        self.images, self.labels = self._load_dataset()
 
-    def _load_data(self):
+    def _load_dataset(self):
         npz_file = Path(self.root)
         arrays = np.load(npz_file)
         return arrays[f"{self.split}_images"], arrays[f"{self.split}_labels"]
 
-    def __getitem__(self, item):
-        image, target = self.data[item], int(self.targets[item])
+    def __getitem__(self, item) -> int:
+        image, label = self.images[item], int(self.labels[item])
 
         image = Image.fromarray(image)
 
@@ -36,9 +36,9 @@ class ChestVisionDataset(VisionDataset):
             image = self.transform(image)
 
         if self.target_transform is not None:
-            target = self.target_transform(target)
+            label = self.target_transform(label)
 
-        return image, target
+        return image, label
 
     def __len__(self) -> int:
-        return len(self.data)
+        return len(self.images)

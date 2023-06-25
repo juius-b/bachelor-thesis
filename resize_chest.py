@@ -2,7 +2,7 @@ import concurrent.futures
 
 from PIL import Image
 from pathlib import Path
-from tqdm import tqdm
+from test_tqdm import tqdm
 
 RESIZE_WIDTH = RESIZE_HEIGHT = 256
 RESIZE_SIZE = (RESIZE_WIDTH, RESIZE_HEIGHT)
