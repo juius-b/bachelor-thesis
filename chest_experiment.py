@@ -16,9 +16,6 @@ from chest_dataset import ChestVisionDataset
 
 
 def main():
-    npz_file = Path("/mnt/jbrockma/bachelor-thesis-npz/chest.npz")
-    chest_arrays = np.load(npz_file)
-
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     resnet_transform = transforms.Compose([
@@ -27,7 +24,7 @@ def main():
         transforms.Normalize(mean=[.5], std=[.5])
     ])
 
-    train_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", transform=resnet_transform)
+    train_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", as_rgb=True, transform=resnet_transform)
 
     batch_size = 128
 
@@ -51,7 +48,7 @@ def main():
     # training
     model.train()
     for epoch in trange(n_epochs, desc="Training"):
-        for i, (data, targets) in tqdm(enumerate(train_dataloader), desc="Learning", total=batch_size, leave=False):
+        for data, targets in tqdm(train_dataloader, desc="Learning", total=len(train_dataloader), leave=False):
             optim.zero_grad()
             outputs = model(data.to(device))
 
@@ -73,7 +70,7 @@ def main():
     y_true = torch.tensor([]).to(device)
 
     with torch.no_grad():
-        for i, (inputs, targets) in tqdm(enumerate(test_dataloader), desc="Testing", total=batch_size):
+        for inputs, targets in tqdm(test_dataloader, desc="Testing", total=len(test_dataloader)):
             inputs = inputs.to(device)
             outputs = model(inputs)
 
