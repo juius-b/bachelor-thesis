@@ -39,7 +39,7 @@ def main():
 
     optim = Adam(model.parameters(), lr=.001)
     n_epochs = 100
-    n_epochs = 3
+    n_epochs = 2
     milestones = map(int, [.5 * n_epochs, .75 * n_epochs])
     lr_scheduler = MultiStepLR(optim, milestones=milestones, gamma=.1)
 
@@ -60,7 +60,7 @@ def main():
 
         lr_scheduler.step()
 
-    test_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", transform=resnet_transform)
+    test_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", split="test", as_rgb=True, transform=resnet_transform)
 
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
 
@@ -102,3 +102,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
