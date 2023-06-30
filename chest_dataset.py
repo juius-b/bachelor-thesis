@@ -12,11 +12,11 @@ class ChestVisionDataset(VisionDataset):
                "infiltration", "mass", "nodule", "pleural_thickening", "pneumonia", "pneumothorax"]
     splits = {"train", "val", "test"}
 
-    def __init__(self, root: str, split: str = "train", as_rgb: bool = False, transform: Optional[Callable] = None,
+    def __init__(self, root: str, split: str = "train", to_rgb: bool = False, transform: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None):
         super().__init__(root, transform=transform, target_transform=target_transform)
         self.split = split.lower()
-        self.as_rgb = as_rgb
+        self.to_rgb = to_rgb
 
         if self.split not in self.splits:
             raise RuntimeError("Dataset split not recognized. Must be one of train, val or test")
@@ -33,7 +33,7 @@ class ChestVisionDataset(VisionDataset):
 
         image = Image.fromarray(image)
 
-        if self.as_rgb:
+        if self.to_rgb:
             image = image.convert("RGB")
 
         if self.transform is not None:
