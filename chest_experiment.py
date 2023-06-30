@@ -1,14 +1,10 @@
-import os
-from pathlib import Path
-
-import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score, accuracy_score
 from torch import nn
-from torch.utils.data import DataLoader
-from torchvision.models import resnet18, ResNet18_Weights
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
+from torch.utils.data import DataLoader
+from torchvision.models import resnet18, ResNet18_Weights
 from torchvision.transforms import InterpolationMode, transforms
 from tqdm.auto import tqdm, trange
 
@@ -24,7 +20,8 @@ def main():
         transforms.Normalize(mean=[.5], std=[.5])
     ])
 
-    train_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", as_rgb=True, transform=resnet_transform)
+    train_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", as_rgb=True,
+                                       transform=resnet_transform)
 
     batch_size = 128
 
@@ -37,7 +34,7 @@ def main():
 
     model = model_ft.to(device)
 
-    optim = Adam(model.parameters(), lr=.001)
+    optim = Adam(model.parameters(), lr=1e-3)
     n_epochs = 100
     n_epochs = 2
     milestones = map(int, [.5 * n_epochs, .75 * n_epochs])
@@ -60,7 +57,8 @@ def main():
 
         lr_scheduler.step()
 
-    test_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", split="test", as_rgb=True, transform=resnet_transform)
+    test_dataset = ChestVisionDataset("/mnt/jbrockma/bachelor-thesis-npz/chest.npz", split="test", as_rgb=True,
+                                      transform=resnet_transform)
 
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
 
@@ -102,4 +100,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
