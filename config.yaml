@@ -1,6 +1,6 @@
 model: resnet
-dataset: chest
-epochs: 2 # should be 100
+dataset: ???
+epochs: ??? # should be 100
 batch_size: 128
 learning_rate: 0.001
 gamma: 0.1
