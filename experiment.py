@@ -1,30 +1,31 @@
-import torch
-from omegaconf import DictConfig, OmegaConf
+from dataclasses import dataclass
+import logging
 import hydra
+import torch
+from omegaconf import DictConfig
 from sklearn.metrics import roc_auc_score, accuracy_score
 from torch import nn
-from torch.cuda import device
 from torch.optim import Adam, Optimizer
 from torch.optim.lr_scheduler import MultiStepLR, LRScheduler
 from torch.utils.data import DataLoader
-# import wandb
 from torchvision.models import resnet18, ResNet18_Weights, resnet50, ResNet50_Weights
-from torchvision.transforms import InterpolationMode, transforms
+from torchvision.transforms import transforms
 from tqdm import trange
 from tqdm.contrib import tenumerate
-from dataclasses import dataclass
-from dataset import NpzVisionDataset
-from typing import Optional
+
+from dataset import create_dataset_builder
 
 
-@dataclass()
+@dataclass
 class ExperimentConfig:
     epochs: int
-    device: Optional[device]
-    model: Optional[nn.Module]
+    device = None
+    model = None
 
     def __init__(self, epochs):
         self.epochs = epochs
+
+
 @dataclass
 class TrainingConfig(ExperimentConfig):
     optimizer: Optimizer
@@ -36,21 +37,25 @@ class EvaluationConfig(ExperimentConfig):
     foo: int
 
 
+log = logging.getLogger(__name__)
+
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(cfg: DictConfig):
     experiment_cfg = ExperimentConfig(cfg.epochs)
     experiment_cfg.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     resnet_transform = transforms.Compose([
-        transforms.Resize((224, 224), interpolation=InterpolationMode.NEAREST),
+        transforms.Lambda(lambda img: img.convert("RGB")),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[.5], std=[.5])
     ])
 
     npz_file_path = f"~/.medmnist/{cfg.dataset}mnist.npz"
 
-    train_dataset = NpzVisionDataset(npz_file_path, to_rgb=True,
-                                     transform=resnet_transform)
+    build_dataset = create_dataset_builder(cfg.dataset, npz_file_path, transform=resnet_transform)
+
+    train_dataset = build_dataset()
 
     experiment_cfg.dataloader = DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True)
 
@@ -70,7 +75,6 @@ def main(cfg: DictConfig):
 
     experiment_cfg.criterion = nn.BCEWithLogitsLoss()
 
-
     # wandb.init(
     #     project="bachelor-thesis-experiment-dev",
     #     config=OmegaConf.to_object(cfg)
@@ -80,8 +84,7 @@ def main(cfg: DictConfig):
 
     del train_dataset
 
-    test_dataset = NpzVisionDataset(npz_file_path, split="test", to_rgb=True,
-                                    transform=resnet_transform)
+    test_dataset = build_dataset(split="test")
 
     experiment_cfg.dataloader = DataLoader(test_dataset, batch_size=cfg.batch_size)
 
