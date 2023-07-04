@@ -33,7 +33,7 @@ def get_tuned_model(name: str, num_classes: int) -> nn.Module:
 
 def get_tuned_linear(m: nn.Linear, num_classes: int) -> nn.Linear:
     num_features = m.in_features
-    return nn.Linear(num_features, num_classes, bias=m.bias)
+    return nn.Linear(num_features, num_classes, bias=False if m.bias is None else True)
 
 
 def tune_linear_in_sequential(seq: nn.Sequential, num_classes: int):
@@ -133,6 +133,7 @@ def vit(model: VisionTransformer, num_classes: int):
     tune_linear_in_sequential(model.heads, num_classes)
 
 
+# TODO: make work as wide_resnet
 @register_tuner
 def wide(model: ResNet, num_classes: int):
     resnet(model, num_classes)
