@@ -62,13 +62,13 @@ class BreastDataset(NpzVisionDataset):
     classes = ["class"]
 
 
-def create_dataset_builder(name: str, *args, **kwargs):
-    def builder(*_args, **_kwargs):
+def create_dataset_init(name: str, *args, **kwargs):
+    def init(*_args, **_kwargs):
         all_args = args + _args
         all_kwargs = {**kwargs, **_kwargs}
         return get_dataset_class(name)(*all_args, **all_kwargs)
 
-    return builder
+    return init
 
 
 def get_dataset_class(name: str) -> Type[NpzVisionDataset]:
