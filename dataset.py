@@ -1,8 +1,7 @@
-from typing import Optional, Callable, List, Type, Dict, Any
-
 import numpy as np
 from PIL import Image
 from torchvision.datasets.vision import VisionDataset
+from typing import Optional, Callable, List, Type, Any
 
 
 class NpzVisionDataset(VisionDataset):
@@ -41,17 +40,23 @@ class NpzVisionDataset(VisionDataset):
 
 
 BUILTIN_DATASETS = {}
+MULTICLASS_DATASETS = set()
+MULTILABEL_DATASETS = set()
 
 
-def register_dataset(name: str = None):
+def register_dataset(name: str = None, multiclass: Optional[bool] = True, multilabel: Optional[bool] = False):
     def wrapper(cls: Type[NpzVisionDataset]) -> Type[NpzVisionDataset]:
         BUILTIN_DATASETS[name] = cls
+        if multiclass:
+            MULTICLASS_DATASETS.add(name)
+        if multilabel:
+            MULTILABEL_DATASETS.add(name)
         return cls
 
     return wrapper
 
 
-@register_dataset("chest")
+@register_dataset("chest", multiclass=False, multilabel=True)
 class ChestDataset(NpzVisionDataset):
     classes = ["atelectasis", "cardiomegaly", "consolidation", "edema", "effusion", "emphysema", "fibrosis", "hernia",
                "infiltration", "mass", "nodule", "pleural_thickening", "pneumonia", "pneumothorax"]
@@ -83,3 +88,11 @@ def get_dataset_class(name: str) -> Type[NpzVisionDataset]:
 def get_dataset(name: str, **config: Any) -> NpzVisionDataset:
     cls = get_dataset_class(name)
     return cls(**config)
+
+
+def is_multiclass(name: str) -> bool:
+    return name in MULTICLASS_DATASETS
+
+
+def is_multilabel(name: str) -> bool:
+    return name in MULTILABEL_DATASETS
