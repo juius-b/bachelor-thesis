@@ -40,29 +40,23 @@ class NpzVisionDataset(VisionDataset):
 
 
 BUILTIN_DATASETS = {}
-MULTICLASS_DATASETS = set()
-MULTILABEL_DATASETS = set()
 
 
-def register_dataset(name: str = None, multiclass: Optional[bool] = True, multilabel: Optional[bool] = False):
+def register_dataset(name: str, problem: str):
     def wrapper(cls: Type[NpzVisionDataset]) -> Type[NpzVisionDataset]:
-        BUILTIN_DATASETS[name] = cls
-        if multiclass:
-            MULTICLASS_DATASETS.add(name)
-        if multilabel:
-            MULTILABEL_DATASETS.add(name)
+        BUILTIN_DATASETS[name] = (cls, problem)
         return cls
 
     return wrapper
 
 
-@register_dataset("chest", multiclass=False, multilabel=True)
+@register_dataset("chest", "multilabel")
 class ChestDataset(NpzVisionDataset):
     classes = ["atelectasis", "cardiomegaly", "consolidation", "edema", "effusion", "emphysema", "fibrosis", "hernia",
                "infiltration", "mass", "nodule", "pleural_thickening", "pneumonia", "pneumothorax"]
 
 
-@register_dataset("breast")
+@register_dataset("breast", "binary")
 class BreastDataset(NpzVisionDataset):
     classes = ["class"]
 
@@ -79,7 +73,7 @@ def create_dataset_init(name: str, *args, **kwargs):
 def get_dataset_class(name: str) -> Type[NpzVisionDataset]:
     name = name.lower()
     try:
-        cls = BUILTIN_DATASETS[name]
+        cls = BUILTIN_DATASETS[name][0]
     except KeyError:
         raise ValueError(f"Unknown dataset {name}")
     return cls
@@ -90,9 +84,10 @@ def get_dataset(name: str, **config: Any) -> NpzVisionDataset:
     return cls(**config)
 
 
-def is_multiclass(name: str) -> bool:
-    return name in MULTICLASS_DATASETS
-
-
-def is_multilabel(name: str) -> bool:
-    return name in MULTILABEL_DATASETS
+def get_dataset_problem(name: str) -> str:
+    name = name.lower()
+    try:
+        problem = BUILTIN_DATASETS[name][1]
+    except KeyError:
+        raise ValueError(f"Unknown dataset {name}")
+    return problem

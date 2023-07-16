@@ -1,14 +1,11 @@
 import copy
-import datetime
+import hydra
 import logging
 import os
-import time
-from dataclasses import dataclass
-
-import hydra
 import torch
+from dataclasses import dataclass
 from omegaconf import DictConfig
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, accuracy_score
 from torch import nn, device
 from torch.nn.modules import Module
 from torch.optim import Adam, Optimizer
@@ -20,7 +17,7 @@ from tqdm import trange, tqdm
 from tqdm.contrib import tenumerate
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from dataset import create_dataset_init, NpzVisionDataset, is_multiclass, is_multilabel
+from dataset import create_dataset_init, NpzVisionDataset, get_dataset_problem
 from tuning import get_tuned_model
 
 
@@ -65,19 +62,25 @@ def accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor, threshold: fl
         return (num_correct / num_total).item()
 
 
-def multiclass_accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
-    pass
-
-
-def auroc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
-    y_true = targets.cpu().numpy()
-    y_score = outputs.cpu().numpy()
+def binary_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
+    y_true = targets.cpu().numpy().flatten()
+    y_score = outputs.cpu().numpy().flatten()
 
     return roc_auc_score(y_true, y_score)
 
 
-def multiclass_auroc_measure():
-    pass
+def multiclass_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
+    y_true = targets.cpu().numpy()
+    y_score = outputs.cpu().numpy()
+
+    return roc_auc_score(y_true, y_score, multi_class="ovr")
+
+
+def multilabel_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
+    y_true = targets.cpu().numpy()
+    y_score = outputs.cpu().numpy()
+
+    return roc_auc_score(y_true, y_score)
 
 
 @hydra.main(config_path=".", config_name="config", version_base=None)
@@ -122,14 +125,16 @@ def main(cfg: DictConfig):
     experiment_cfg.model = model.to(experiment_cfg.device)
     log.info(f"Using model {cfg.model} of type {experiment_cfg.model.__class__.__name__}")
 
-    experiment_cfg.criterion = nn.BCEWithLogitsLoss() if is_multilabel(cfg.dataset) else nn.CrossEntropyLoss()
+    problem = get_dataset_problem(cfg.dataset.name)
+
+    experiment_cfg.criterion = nn.BCEWithLogitsLoss() if problem == "multilabel" else nn.CrossEntropyLoss()
 
     train_cfg = TrainingConfig(train_data_loader, experiment_cfg)
 
     train_cfg.optimizer = Adam(experiment_cfg.model.parameters(), lr=cfg.learning_rate)
 
     milestones = map(int, [.5 * cfg.epochs, .75 * cfg.epochs])
-    train_cfg.lr_scheduler = MultiStepLR(train_cfg.optimizer, milestones=milestones, gamma=cfg.gamma)
+    lr_scheduler = MultiStepLR(train_cfg.optimizer, milestones=milestones, gamma=cfg.gamma)
 
     val_cfg = copy.copy(experiment_cfg)
     val_cfg.data_loader = val_data_loader
@@ -140,41 +145,56 @@ def main(cfg: DictConfig):
     # )
 
     best_model = copy.deepcopy(experiment_cfg.model)
-    best_auroc = 0
+    best_auc = 0
     best_epoch = 0
 
-    accuracy_fn = multiclass_accuracy_measure if is_multiclass(cfg.dataset) else accuracy_measure
-    auroc_fn = multiclass_auroc_measure if is_multiclass(cfg.dataset) else auroc_measure
+    auc_fn = roc_auc_score
 
-    log.info(f"Starting training with learning rate {train_cfg.lr_scheduler.get_last_lr()}")
-    start_time = time.time()
+    match problem:
+        case "binary":
+            auc_fn = binary_auc_measure
+        case "multiclass":
+            auc_fn = multiclass_auc_measure
+        case "multilabel":
+            auc_fn = multilabel_auc_measure
+
+    output_dir = os.getcwd()
+
+    log.info(f"Starting training with learning rate {lr_scheduler.get_last_lr()[0]:f}")
 
     with logging_redirect_tqdm():
         for epoch in trange(cfg.epochs, desc="Training"):
             log.info(f"Starting epoch {epoch + 1}")
 
             train_one_epoch(train_cfg)
-            train_cfg.lr_scheduler.step()
+            lr_scheduler.step()
 
-            log.info(f"Epoch done. Learning rate now: {train_cfg.lr_scheduler.get_last_lr()}")
+            log.info(f"Epoch done. Learning rate now: {lr_scheduler.get_last_lr()[0]:f}")
             log.info("Starting validation")
 
             targets, outputs, losses = evaluate(val_cfg, leave_pbar=False)
-            accuracy = accuracy_fn(targets, outputs)
-            auroc = auroc_fn(targets, outputs)
+            acc = accuracy_measure(targets, outputs)
+            auc = auc_fn(targets, outputs)
             # mean_loss = torch.mean(losses, 0).item()
 
-            log.info(f"Validation done. ACC@{accuracy:.2f}, AUC@{auroc:.2f}")
+            log.info(f"Validation done. ACC@{acc:.2f}, AUC@{auc:.2f}")
 
-            if best_auroc < auroc:
+            if best_auc < auc:
                 best_epoch = epoch
-                best_auroc = auroc
+                best_auc = auc
                 best_model = copy.deepcopy(experiment_cfg.model)
-            # TODO: Save model and checkpoint
 
-    total_time = time.time() - start_time
-    delta = datetime.timedelta(seconds=int(total_time))
-    log.info(f"Training done. Took {delta} seconds")
+            checkpoint = {
+                "model": train_cfg.model.state_dict(),
+                "optimizer": train_cfg.optimizer.state_dict(),
+                "lr_scheduler": lr_scheduler.state_dict(),
+                "epoch": epoch,
+                "cfg": cfg
+            }
+
+            torch.save(checkpoint, os.path.join(output_dir, "checkpoint.pth"))
+
+    log.info(f"Training done.")
 
     # Free up memory
     del train_dataset
@@ -184,39 +204,24 @@ def main(cfg: DictConfig):
         "model": best_model.state_dict()
     }
 
-    torch.save(state, cfg.output_dir)
+    torch.save(state, os.path.join(output_dir, f"model_{best_epoch}@{best_auc:.2f}AUC.pth"))
 
     test_dataset = init_dataset(split="test")
 
     experiment_cfg.data_loader = DataLoader(test_dataset, batch_size=cfg.batch_size)
 
-    y_pred, y_true = evaluate(experiment_cfg, leave_pbar=True)
+    targets, outputs, _ = evaluate(experiment_cfg, leave_pbar=True)
 
-    y_pred = y_pred.detach().cpu().numpy().squeeze()
-    y_true = y_true.detach().cpu().numpy().squeeze()
+    auc = auc_fn(targets, outputs)
+    acc = accuracy_measure(targets, outputs)
 
-    auc = 0
-    for i in range(y_true.shape[1]):
-        label_auc = roc_auc_score(y_true[:, i], y_pred[:, i])
-        auc += label_auc
-    auc /= y_pred.shape[1]
-
-    y_thresh = y_pred > .5
-    accuracy = 0
-    for i in range(y_true.shape[1]):
-        label_acc = accuracy_score(y_true[:, i], y_thresh[:, i])
-        accuracy += label_acc
-    accuracy /= y_true.shape[1]
-
-    print(f"AUC: {auc}", f"Accuracy: {accuracy}")
+    print(f"AUC: {auc}", f"Accuracy: {acc}")
 
     # wandb.finish()
 
 
 def train_one_epoch(cfg: TrainingConfig):
     cfg.model.train()
-
-    loss: torch.Tensor = torch.Tensor([0])
 
     for images, targets in tqdm(cfg.data_loader, desc="Learning", total=len(cfg.data_loader), leave=False):
         cfg.optimizer.zero_grad()
@@ -228,8 +233,6 @@ def train_one_epoch(cfg: TrainingConfig):
 
         loss.backward()
         cfg.optimizer.step()
-
-    log.info(f"Last loss of epoch: {loss.item()}")
 
 
 def evaluate(cfg: ExperimentConfig, leave_pbar: bool):

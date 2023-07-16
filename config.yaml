@@ -1,11 +1,3 @@
-output_dir: outputs
-
-hydra:
-  run:
-    dir: ${output_dir}
-  sweep:
-    dir: ${output_dir}
-
 model: resnet18
 dataset:
   name: ???
