@@ -1,13 +1,14 @@
 import copy
-import hydra
 import logging
 import os
-import torch
 from dataclasses import dataclass
+from typing import Callable
+
+import hydra
+import torch
 from omegaconf import DictConfig
-from sklearn.metrics import roc_auc_score, accuracy_score
-from torch import nn, device
-from torch.nn.modules import Module
+from sklearn.metrics import roc_auc_score
+from torch import nn, device, Tensor
 from torch.optim import Adam, Optimizer
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader, Dataset
@@ -25,18 +26,33 @@ from tuning import get_tuned_model
 class ExperimentConfig:
     device: device
     model: nn.Module
-    criterion: Module
+    criterion: nn.Module
+    targets_criterion_transform: Callable[[Tensor], Tensor]
     data_loader: DataLoader
 
 
 @dataclass
-class TrainingConfig(ExperimentConfig):
-    optimizer: Optimizer
-
+class ExtendedExperimentConfig(ExperimentConfig):
     def __init__(self, data_loader: DataLoader, experiment_cfg: ExperimentConfig):
         for attr_name, attr_value in vars(experiment_cfg).items():
             setattr(self, attr_name, attr_value)
         self.data_loader = data_loader
+
+
+@dataclass
+class TrainingConfig(ExtendedExperimentConfig):
+    optimizer: Optimizer
+
+    def __init__(self, data_loader: DataLoader, experiment_cfg: ExperimentConfig):
+        super().__init__(data_loader, experiment_cfg)
+
+
+@dataclass
+class EvaluationConfig(ExtendedExperimentConfig):
+    is_multilabel_problem: bool
+
+    def __init__(self, data_loader: DataLoader, experiment_cfg: ExperimentConfig):
+        super().__init__(data_loader, experiment_cfg)
 
 
 log = logging.getLogger(__name__)
@@ -54,17 +70,19 @@ def get_default_model_weights(name: str) -> WeightsEnum:
     return getattr(weights, "DEFAULT")
 
 
-def accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor, threshold: float = 0.5) -> float:
+def accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor, threshold: float = 0.5,
+                     multilabel: bool = False) -> float:
     with torch.inference_mode():
-        predictions = torch.where(outputs.lt(threshold), 0, 1)
+        predictions = torch.where(outputs.lt(threshold), 0, 1) if multilabel else torch.argmax(outputs, dim=1,
+                                                                                               keepdim=True)
         num_correct = torch.all(predictions.eq(targets), dim=1).sum()
         num_total = torch.tensor(targets.shape[0], device=targets.device)
         return (num_correct / num_total).item()
 
 
 def binary_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
-    y_true = targets.cpu().numpy().flatten()
-    y_score = outputs.cpu().numpy().flatten()
+    y_true = targets.cpu().numpy().squeeze()
+    y_score = outputs.cpu().numpy()[:, 1]
 
     return roc_auc_score(y_true, y_score)
 
@@ -85,7 +103,7 @@ def multilabel_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> floa
 
 @hydra.main(config_path=".", config_name="config", version_base=None)
 def main(cfg: DictConfig):
-    print(f"Using config: {cfg}")
+    log.debug(f"Using config: {cfg}")
 
     experiment_cfg = ExperimentConfig()
 
@@ -125,19 +143,25 @@ def main(cfg: DictConfig):
     experiment_cfg.model = model.to(experiment_cfg.device)
     log.info(f"Using model {cfg.model} of type {experiment_cfg.model.__class__.__name__}")
 
-    problem = get_dataset_problem(cfg.dataset.name)
+    problem_type = get_dataset_problem(cfg.dataset.name)
 
-    experiment_cfg.criterion = nn.BCEWithLogitsLoss() if problem == "multilabel" else nn.CrossEntropyLoss()
+    log.info(f"Recognized classification problem: {problem_type}")
+
+    if problem_type == "multilabel":
+        experiment_cfg.criterion = nn.BCEWithLogitsLoss()
+        experiment_cfg.targets_criterion_transform = nn.Identity()
+    else:
+        experiment_cfg.criterion = nn.CrossEntropyLoss()
+        experiment_cfg.targets_criterion_transform = lambda ts: torch.squeeze(ts, 1).to(torch.uint8)
 
     train_cfg = TrainingConfig(train_data_loader, experiment_cfg)
-
     train_cfg.optimizer = Adam(experiment_cfg.model.parameters(), lr=cfg.learning_rate)
 
     milestones = map(int, [.5 * cfg.epochs, .75 * cfg.epochs])
     lr_scheduler = MultiStepLR(train_cfg.optimizer, milestones=milestones, gamma=cfg.gamma)
 
-    val_cfg = copy.copy(experiment_cfg)
-    val_cfg.data_loader = val_data_loader
+    eval_cfg = EvaluationConfig(val_data_loader, experiment_cfg)
+    eval_cfg.is_multilabel_problem = problem_type == "multilabel"
 
     # wandb.init(
     #     project="bachelor-thesis-experiment-dev",
@@ -150,7 +174,7 @@ def main(cfg: DictConfig):
 
     auc_fn = roc_auc_score
 
-    match problem:
+    match problem_type:
         case "binary":
             auc_fn = binary_auc_measure
         case "multiclass":
@@ -164,25 +188,26 @@ def main(cfg: DictConfig):
 
     with logging_redirect_tqdm():
         for epoch in trange(cfg.epochs, desc="Training"):
-            log.info(f"Starting epoch {epoch + 1}")
+            log.debug(f"Starting epoch {epoch + 1}")
 
             train_one_epoch(train_cfg)
             lr_scheduler.step()
 
-            log.info(f"Epoch done. Learning rate now: {lr_scheduler.get_last_lr()[0]:f}")
-            log.info("Starting validation")
+            log.debug(f"Epoch done. Learning rate now: {lr_scheduler.get_last_lr()[0]:f}")
+            log.debug("Starting validation")
 
-            targets, outputs, losses = evaluate(val_cfg, leave_pbar=False)
+            targets, outputs, losses = evaluate(eval_cfg, leave_pbar=False)
             acc = accuracy_measure(targets, outputs)
             auc = auc_fn(targets, outputs)
             # mean_loss = torch.mean(losses, 0).item()
 
-            log.info(f"Validation done. ACC@{acc:.2f}, AUC@{auc:.2f}")
+            log.debug(f"Validation done. AUC@{auc:.2f}, ACC@{acc:.2f}")
 
             if best_auc < auc:
                 best_epoch = epoch
                 best_auc = auc
                 best_model = copy.deepcopy(experiment_cfg.model)
+                log.info(f"Current best model in epoch {best_epoch + 1}; AUC@{best_auc:.2f}")
 
             checkpoint = {
                 "model": train_cfg.model.state_dict(),
@@ -208,14 +233,15 @@ def main(cfg: DictConfig):
 
     test_dataset = init_dataset(split="test")
 
-    experiment_cfg.data_loader = DataLoader(test_dataset, batch_size=cfg.batch_size)
+    eval_cfg.data_loader = DataLoader(test_dataset, batch_size=cfg.batch_size)
+    eval_cfg.model = best_model
 
-    targets, outputs, _ = evaluate(experiment_cfg, leave_pbar=True)
+    targets, outputs, _ = evaluate(eval_cfg, leave_pbar=True)
 
     auc = auc_fn(targets, outputs)
     acc = accuracy_measure(targets, outputs)
 
-    print(f"AUC: {auc}", f"Accuracy: {acc}")
+    log.info(f"Model evaluated: AUC@{auc:.2f} & ACC@{acc:.2f}")
 
     # wandb.finish()
 
@@ -226,34 +252,39 @@ def train_one_epoch(cfg: TrainingConfig):
     for images, targets in tqdm(cfg.data_loader, desc="Learning", total=len(cfg.data_loader), leave=False):
         cfg.optimizer.zero_grad()
 
-        images, targets = images.to(cfg.device), targets.to(torch.float32).to(cfg.device)
+        images, targets = images.to(cfg.device), targets.to(images.dtype).to(cfg.device)
 
         outputs = cfg.model(images)
-        loss = cfg.criterion(outputs, targets)
+        criterion_targets = cfg.targets_criterion_transform(targets)
+        loss = cfg.criterion(outputs, criterion_targets)
 
         loss.backward()
         cfg.optimizer.step()
 
 
-def evaluate(cfg: ExperimentConfig, leave_pbar: bool):
+def evaluate(cfg: EvaluationConfig, leave_pbar: bool):
     cfg.model.eval()
     dataset: NpzVisionDataset = getattr(cfg.data_loader, "dataset")
-    targets_t = torch.empty((len(dataset), len(dataset.classes)), device=cfg.device)
-    outputs_t = torch.empty((len(dataset), len(dataset.classes)), device=cfg.device)
-    losses = torch.empty((len(dataset), 1))
+    dataset_len = len(dataset)
+    targets_t_size = (dataset_len, len(dataset.classes)) if cfg.is_multilabel_problem else (dataset_len, 1)
+    targets_t = torch.empty(targets_t_size, device=cfg.device)
+    outputs_t = torch.empty((dataset_len, len(dataset.classes)), device=cfg.device)
+    losses = torch.empty(len(cfg.data_loader), device=cfg.device)
     with torch.inference_mode():
         for i, (images, targets) in tenumerate(cfg.data_loader, desc="Evaluating", total=len(cfg.data_loader),
                                                leave=leave_pbar):
             images = images.to(cfg.device, non_blocking=True)
-            targets = targets.to(torch.float32).to(cfg.device, non_blocking=True)
+            targets = targets.to(images.dtype).to(cfg.device, non_blocking=True)
 
             outputs = cfg.model(images)
-            loss = cfg.criterion(outputs, targets)
+            criterion_targets = cfg.targets_criterion_transform(targets)
+            loss = cfg.criterion(outputs, criterion_targets)
 
-            for j in range(min(cfg.data_loader.batch_size, len(outputs))):
-                tensor_index = i * cfg.data_loader.batch_size + j
-                targets_t[tensor_index] = targets[j]
-                outputs_t[tensor_index] = outputs[j]
+            tensor_index_start = i * cfg.data_loader.batch_size
+            tensor_index_stop = tensor_index_start + min(cfg.data_loader.batch_size, len(outputs))
+
+            targets_t[tensor_index_start:tensor_index_stop] = targets
+            outputs_t[tensor_index_start:tensor_index_stop] = outputs
             losses[i] = loss.detach()
 
     return targets_t, outputs_t, losses

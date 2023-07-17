@@ -58,7 +58,7 @@ class ChestDataset(NpzVisionDataset):
 
 @register_dataset("breast", "binary")
 class BreastDataset(NpzVisionDataset):
-    classes = ["class"]
+    classes = ["class1", "class2"]
 
 
 def create_dataset_init(name: str, *args, **kwargs):
