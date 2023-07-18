@@ -96,11 +96,10 @@ def multiclass_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> floa
     y_trues = torch.empty((n_classes, n_samples))
     y_scores = torch.empty((n_classes, n_samples))
 
-    def targets_eq_val(x):
-        return torch.squeeze(targets).eq(x)
+    squeezed_targets = torch.squeeze(targets)
 
     for i in range(n_classes):
-        y_trues[i] = torch.where(targets_eq_val(i), 1, 0)
+        y_trues[i] = torch.where(squeezed_targets.eq(i), 1, 0)
         y_scores[i] = outputs[:, i]
 
     y_trues, y_scores = y_trues.cpu().numpy(), y_scores.cpu().numpy()
