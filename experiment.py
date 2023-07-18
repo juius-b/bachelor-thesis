@@ -73,25 +73,41 @@ def get_default_model_weights(name: str) -> WeightsEnum:
 def accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor, threshold: float = 0.5,
                      multilabel: bool = False) -> float:
     with torch.inference_mode():
-        predictions = torch.where(outputs.lt(threshold), 0, 1) if multilabel else torch.argmax(outputs, dim=1,
-                                                                                               keepdim=True)
+        if multilabel:
+            output_lt_threshold = outputs.lt(threshold)
+            predictions = torch.where(output_lt_threshold, 0, 1)
+        else:
+            predictions = torch.argmax(outputs, dim=1,
+                                       keepdim=True)
         num_correct = torch.all(predictions.eq(targets), dim=1).sum()
         num_total = torch.tensor(targets.shape[0], device=targets.device)
         return (num_correct / num_total).item()
 
 
 def binary_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
-    y_true = targets.cpu().numpy().squeeze()
-    y_score = outputs.cpu().numpy()[:, 1]
+    y_true = torch.squeeze(targets).cpu().numpy()
+    y_score = outputs[:, 1].cpu().numpy()
 
     return roc_auc_score(y_true, y_score)
 
 
 def multiclass_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
-    y_true = targets.cpu().numpy()
-    y_score = outputs.cpu().numpy()
+    n_samples, n_classes = outputs.shape
+    y_trues = torch.empty((n_classes, n_samples))
+    y_scores = torch.empty((n_classes, n_samples))
 
-    return roc_auc_score(y_true, y_score, multi_class="ovr")
+    def targets_eq_val(x):
+        return torch.squeeze(targets).eq(x)
+
+    for i in range(n_classes):
+        y_trues[i] = torch.where(targets_eq_val(i), 1, 0)
+        y_scores[i] = outputs[:, i]
+
+    y_trues, y_scores = y_trues.cpu().numpy(), y_scores.cpu().numpy()
+
+    roc_auc_scores = [roc_auc_score(y_trues[i], y_scores[i]) for i in range(n_classes)]
+
+    return sum(roc_auc_scores) / n_classes
 
 
 def multilabel_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
@@ -236,7 +252,7 @@ def main(cfg: DictConfig):
     eval_cfg.data_loader = DataLoader(test_dataset, batch_size=cfg.batch_size)
     eval_cfg.model = best_model
 
-    targets, outputs, _ = evaluate(eval_cfg, leave_pbar=True)
+    targets, outputs, _ = evaluate(eval_cfg)
 
     auc = auc_fn(targets, outputs)
     acc = accuracy_measure(targets, outputs)
@@ -262,7 +278,7 @@ def train_one_epoch(cfg: TrainingConfig):
         cfg.optimizer.step()
 
 
-def evaluate(cfg: EvaluationConfig, leave_pbar: bool):
+def evaluate(cfg: EvaluationConfig, leave_pbar: bool = True):
     cfg.model.eval()
     dataset: NpzVisionDataset = getattr(cfg.data_loader, "dataset")
     dataset_len = len(dataset)

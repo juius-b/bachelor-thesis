@@ -56,6 +56,11 @@ class ChestDataset(NpzVisionDataset):
                "infiltration", "mass", "nodule", "pleural_thickening", "pneumonia", "pneumothorax"]
 
 
+@register_dataset("retina", "multiclass")
+class RetinaDataset(NpzVisionDataset):
+    classes = [f"class{i}" for i in range(5)]
+
+
 @register_dataset("breast", "binary")
 class BreastDataset(NpzVisionDataset):
     classes = ["class1", "class2"]
