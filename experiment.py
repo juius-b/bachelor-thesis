@@ -70,18 +70,27 @@ def get_default_model_weights(name: str) -> WeightsEnum:
     return getattr(weights, "DEFAULT")
 
 
-def accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor, threshold: float = 0.5,
-                     multilabel: bool = False) -> float:
-    with torch.inference_mode():
-        if multilabel:
-            output_lt_threshold = outputs.lt(threshold)
-            predictions = torch.where(output_lt_threshold, 0, 1)
-        else:
-            predictions = torch.argmax(outputs, dim=1,
-                                       keepdim=True)
+@torch.inference_mode()
+def non_multilabel_accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
+    predictions = torch.argmax(outputs, dim=1, keepdim=True)
+    pred_eq_targets = predictions.eq(targets)
+    num_correct = torch.all(pred_eq_targets, dim=1).sum()
+    num_total = torch.tensor(targets.shape[0], device=targets.device)
+    return (num_correct / num_total).item()
+
+
+@torch.inference_mode()
+def multilabel_accuracy_measure(targets: torch.Tensor, outputs: torch.Tensor, threshold: float = 0.5,
+                                exact=True) -> float:
+    out_lt_threshold = outputs.lt(threshold)
+    predictions = torch.where(out_lt_threshold, 0, 1)
+    if exact:
         num_correct = torch.all(predictions.eq(targets), dim=1).sum()
         num_total = torch.tensor(targets.shape[0], device=targets.device)
-        return (num_correct / num_total).item()
+    else:
+        num_correct = predictions.eq(targets).sum()
+        num_total = torch.tensor(targets.numel(), device=targets.device)
+    return (num_correct / num_total).item()
 
 
 def binary_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
@@ -92,15 +101,16 @@ def binary_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
 
 
 def multiclass_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
-    n_samples, n_classes = outputs.shape
-    y_trues = torch.empty((n_classes, n_samples))
-    y_scores = torch.empty((n_classes, n_samples))
+    with torch.inference_mode():
+        n_samples, n_classes = outputs.shape
+        y_trues = torch.empty((n_classes, n_samples))
+        y_scores = torch.empty((n_classes, n_samples))
 
-    squeezed_targets = torch.squeeze(targets)
+        squeezed_targets = torch.squeeze(targets)
 
-    for i in range(n_classes):
-        y_trues[i] = torch.where(squeezed_targets.eq(i), 1, 0)
-        y_scores[i] = outputs[:, i]
+        for i in range(n_classes):
+            y_trues[i] = torch.where(squeezed_targets.eq(i), 1, 0)
+            y_scores[i] = outputs[:, i]
 
     y_trues, y_scores = y_trues.cpu().numpy(), y_scores.cpu().numpy()
 
@@ -188,6 +198,7 @@ def main(cfg: DictConfig):
     best_epoch = 0
 
     auc_fn = roc_auc_score
+    acc_fn = non_multilabel_accuracy_measure
 
     match problem_type:
         case "binary":
@@ -195,7 +206,10 @@ def main(cfg: DictConfig):
         case "multiclass":
             auc_fn = multiclass_auc_measure
         case "multilabel":
+            def _acc_fn(_ts, _os):
+                return multilabel_accuracy_measure(_ts, _os, exact=False)
             auc_fn = multilabel_auc_measure
+            acc_fn = _acc_fn
 
     output_dir = os.getcwd()
 
@@ -212,7 +226,7 @@ def main(cfg: DictConfig):
             log.debug("Starting validation")
 
             targets, outputs, losses = evaluate(eval_cfg, leave_pbar=False)
-            acc = accuracy_measure(targets, outputs)
+            acc = acc_fn(targets, outputs)
             auc = auc_fn(targets, outputs)
             # mean_loss = torch.mean(losses, 0).item()
 
@@ -254,7 +268,7 @@ def main(cfg: DictConfig):
     targets, outputs, _ = evaluate(eval_cfg)
 
     auc = auc_fn(targets, outputs)
-    acc = accuracy_measure(targets, outputs)
+    acc = acc_fn(targets, outputs)
 
     log.info(f"Model evaluated: AUC@{auc:.2f} & ACC@{acc:.2f}")
 
