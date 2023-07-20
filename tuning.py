@@ -15,7 +15,7 @@ def register_tuner(fn):
 
 
 def get_model_tuner(name: str):
-    name = re.sub(r"[\d_].*", "", name)
+    name = re.sub(r"[\d_].*", "", name)  # remove everything after anc including the first _ symbol
     try:
         fn = BUILTIN_TUNERS[name]
     except KeyError:

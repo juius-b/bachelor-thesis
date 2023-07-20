@@ -6,7 +6,8 @@ from typing import Callable
 
 import hydra
 import torch
-from omegaconf import DictConfig
+import wandb
+from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 from torch import nn, device, Tensor
 from torch.optim import Adam, Optimizer
@@ -55,7 +56,7 @@ class EvaluationConfig(ExtendedExperimentConfig):
         super().__init__(data_loader, experiment_cfg)
 
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("EXPERIMENT")
 
 
 def create_dataloader_init(batch_size):
@@ -188,10 +189,10 @@ def main(cfg: DictConfig):
     eval_cfg = EvaluationConfig(val_data_loader, experiment_cfg)
     eval_cfg.is_multilabel_problem = problem_type == "multilabel"
 
-    # wandb.init(
-    #     project="bachelor-thesis-experiment-dev",
-    #     config=OmegaConf.to_object(cfg)
-    # )
+    wandb.init(
+        project=f"bachelor-thesis-experiment-{cfg.dataset.name}-dev",
+        config=OmegaConf.to_object(cfg)
+    )
 
     best_model = copy.deepcopy(experiment_cfg.model)
     best_auc = 0
@@ -225,16 +226,16 @@ def main(cfg: DictConfig):
             log.debug(f"Epoch done. Learning rate now: {lr_scheduler.get_last_lr()[0]:f}")
             log.debug("Starting validation")
 
-            targets, outputs, losses = evaluate(eval_cfg, leave_pbar=False)
-            acc = acc_fn(targets, outputs)
-            auc = auc_fn(targets, outputs)
-            # mean_loss = torch.mean(losses, 0).item()
+            targets, outputs, val_loss = evaluate(eval_cfg, leave_pbar=False)
+            val_acc = acc_fn(targets, outputs)
+            val_auc = auc_fn(targets, outputs)
 
-            log.debug(f"Validation done. AUC@{auc:.2f}, ACC@{acc:.2f}")
+            log.debug(f"Validation done. AUC@{val_auc:.2f}, ACC@{val_acc:.2f}, LOSS@{val_loss:.2f}")
+            wandb.log({"val_auc": val_auc, "val_acc": val_acc, "val_loss": val_loss})
 
-            if best_auc < auc:
+            if best_auc < val_auc:
                 best_epoch = epoch
-                best_auc = auc
+                best_auc = val_auc
                 best_model = copy.deepcopy(experiment_cfg.model)
                 log.info(f"Current best model in epoch {best_epoch + 1}; AUC@{best_auc:.2f}")
 
@@ -265,18 +266,21 @@ def main(cfg: DictConfig):
     eval_cfg.data_loader = DataLoader(test_dataset, batch_size=cfg.batch_size)
     eval_cfg.model = best_model
 
-    targets, outputs, _ = evaluate(eval_cfg)
+    targets, outputs, test_loss = evaluate(eval_cfg)
 
-    auc = auc_fn(targets, outputs)
-    acc = acc_fn(targets, outputs)
+    test_auc = auc_fn(targets, outputs)
+    test_acc = acc_fn(targets, outputs)
 
-    log.info(f"Model evaluated: AUC@{auc:.2f} & ACC@{acc:.2f}")
+    log.info(f"Model evaluated: AUC@{test_auc:.2f} & ACC@{test_acc:.2f} (& LOSS@{test_loss:.2f})")
+    wandb.log({"test_auc": test_auc, "test_acc": test_acc, "test_loss": test_loss})
 
-    # wandb.finish()
+    wandb.finish()
 
 
 def train_one_epoch(cfg: TrainingConfig):
     cfg.model.train()
+
+    loss_sum = torch.tensor(0., device=cfg.device)
 
     for images, targets in tqdm(cfg.data_loader, desc="Learning", total=len(cfg.data_loader), leave=False):
         cfg.optimizer.zero_grad()
@@ -286,9 +290,14 @@ def train_one_epoch(cfg: TrainingConfig):
         outputs = cfg.model(images)
         criterion_targets = cfg.targets_criterion_transform(targets)
         loss = cfg.criterion(outputs, criterion_targets)
+        loss_sum += loss.detach()
 
         loss.backward()
         cfg.optimizer.step()
+
+    train_loss = loss_sum / len(cfg.data_loader)
+    log.debug(f"Training loss this epoch: {train_loss:.2f}")
+    wandb.log({"train_loss": train_loss})
 
 
 def evaluate(cfg: EvaluationConfig, leave_pbar: bool = True):
@@ -298,7 +307,7 @@ def evaluate(cfg: EvaluationConfig, leave_pbar: bool = True):
     targets_t_size = (dataset_len, len(dataset.classes)) if cfg.is_multilabel_problem else (dataset_len, 1)
     targets_t = torch.empty(targets_t_size, device=cfg.device)
     outputs_t = torch.empty((dataset_len, len(dataset.classes)), device=cfg.device)
-    losses = torch.empty(len(cfg.data_loader), device=cfg.device)
+    loss_sum = torch.tensor(0., device=cfg.device)
     with torch.inference_mode():
         for i, (images, targets) in tenumerate(cfg.data_loader, desc="Evaluating", total=len(cfg.data_loader),
                                                leave=leave_pbar):
@@ -307,16 +316,15 @@ def evaluate(cfg: EvaluationConfig, leave_pbar: bool = True):
 
             outputs = cfg.model(images)
             criterion_targets = cfg.targets_criterion_transform(targets)
-            loss = cfg.criterion(outputs, criterion_targets)
+            loss_sum += cfg.criterion(outputs, criterion_targets)
 
             tensor_index_start = i * cfg.data_loader.batch_size
             tensor_index_stop = tensor_index_start + min(cfg.data_loader.batch_size, len(outputs))
 
             targets_t[tensor_index_start:tensor_index_stop] = targets
             outputs_t[tensor_index_start:tensor_index_stop] = outputs
-            losses[i] = loss.detach()
 
-    return targets_t, outputs_t, losses
+    return targets_t, outputs_t, loss_sum / len(cfg.data_loader)
 
 
 if __name__ == '__main__':
