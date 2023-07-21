@@ -18,7 +18,7 @@ The following are components of the database that are relevant for creating our 
     - Ensure grayscale
     - Resize to wanted size (e.g. 256)
 
-## Pipeline
+## Procedure
 
 This produces the npz file containing the label and image arrays.
 
