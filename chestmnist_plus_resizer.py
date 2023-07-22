@@ -72,17 +72,18 @@ def main(args):
 
     print(f"Saving {save_file}. This might take a while ...")
 
-    np.savez_compressed(save_file, kwds=name_to_array)
+    np.savez_compressed(save_file, **name_to_array)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(prog="ChestMNIST+Resizer", description="Resize the ChestX-ray8 (CXR8) dataset to "
-                                                                            "any size and save them to an npz file")
+    parser = argparse.ArgumentParser(prog="ChestMNIST+Resizer",
+                                     description="Resize the ChestX-ray8 (CXR8) dataset to any size and save them to "
+                                                 "an npz file")
 
-    parser.add_argument("source", type=str, help="directory holding the 1024 x 1024 pixel images "
-                                                 "from CXR8 dataset")
-    parser.add_argument("split_info", type=str, help="csv file containing columns split, column and image_id "
-                                                     "information about the ChestMNIST dataset")
+    parser.add_argument("source", type=str, help="directory holding the 1024 x 1024 pixel images from CXR8 dataset")
+    parser.add_argument("split_info", type=str,
+                        help="csv file containing columns split, column and image_id information about the ChestMNIST "
+                             "dataset")
     parser.add_argument("--chestmnist", default=os.path.join("~", ".medmnist", "chestmnist.npz"), type=str,
                         dest="chest_mnist", help="chestmnist.npz file from which the labels are copied")
     parser.add_argument("-s", "--size", default=224, type=int,
