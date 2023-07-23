@@ -73,7 +73,7 @@ def main(args):
             name_to_array[f"{SPLIT}_{data_name}"] = data_of_split[SPLIT]
 
     if out_dest.is_dir():
-        out_dest /= f"chest_{args.size}.npz"
+        out_dest /= f"chest-{args.size}.npz"
 
     print(f"Saving {out_dest}. This might take a while ...")
 
