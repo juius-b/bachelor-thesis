@@ -14,20 +14,24 @@ from PIL import Image
 SPLITS = ["train", "val", "test"]
 
 
-def main(args):
-    for name in ["source", "split_info", "chest_mnist", "out_dest"]:
+def resolve_other_paths(args):
+    for name in ["source", "split_info", "chest_mnist"]:
         path_str = getattr(args, name)
         path_str = os.path.expandvars(path_str)
         path = Path(path_str).expanduser().resolve()
-        if path.is_dir() and not path.exists():
-            if name == "source":
-                raise FileNotFoundError("Directory for the source images of the CXR8 dataset not found")
-            else:  # out_dest
-                path.mkdir()
-        elif path.is_file():
-            with open(path):
-                pass
         setattr(args, name, path)
+
+
+def main(args):
+    out_dir = args.out_dest.endswith("/")
+    out_dest_str = os.path.expandvars(args.out_dest)
+    out_dest = Path(out_dest_str).expanduser().resolve()
+    if out_dir:
+        out_dest.mkdir(parents=True, exist_ok=True)
+    else:
+        out_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    resolve_other_paths(args)
     split_info = pd.read_csv(args.split_info)
     split_value_counts = split_info["split"].value_counts()
 
@@ -38,27 +42,27 @@ def main(args):
         n_samples = n_samples_of_split[SPLIT]
         images_of_split[SPLIT] = np.empty((n_samples, args.size, args.size), dtype=np.uint8)
 
-    with tqdm(desc="Preprocessing", total=len(split_info), unit="pic") as pbar:
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = set()
-
-            def preprocess(_info):
-                _, _split, _index, _image_id = _info
-
-                fp = args.source / f"{_image_id}.png"
-                with Image.open(fp.expanduser().resolve()) as im:
-                    if im.mode != "L":
-                        im = im.convert("L")
-                    im = im.resize((args.size, args.size), Image.BICUBIC)
-
-                    images_of_split[_split][_index] = np.asarray(im)
-
-            for info in split_info.itertuples():
-                future = executor.submit(preprocess, info)
-                future.add_done_callback(lambda _: pbar.update())
-                futures.add(future)
-
-            concurrent.futures.wait(futures)
+    # with tqdm(desc="Preprocessing", total=len(split_info), unit="pic") as pbar:
+    #     with concurrent.futures.ThreadPoolExecutor() as executor:
+    #         futures = set()
+    #
+    #         def preprocess(_info):
+    #             _, _split, _index, _image_id = _info
+    #
+    #             fp = args.source / f"{_image_id}.png"
+    #             with Image.open(fp.expanduser().resolve()) as im:
+    #                 if im.mode != "L":
+    #                     im = im.convert("L")
+    #                 im = im.resize((args.size, args.size), Image.BICUBIC)
+    #
+    #                 images_of_split[_split][_index] = np.asarray(im)
+    #
+    #         for info in split_info.itertuples():
+    #             future = executor.submit(preprocess, info)
+    #             future.add_done_callback(lambda _: pbar.update())
+    #             futures.add(future)
+    #
+    #         concurrent.futures.wait(futures)
 
     chest_mnist = np.load(args.chest_mnist)
     labels_of_split = {SPLIT: chest_mnist[f"{SPLIT}_labels"] for SPLIT in SPLITS}
@@ -68,11 +72,12 @@ def main(args):
         for SPLIT in SPLITS:
             name_to_array[f"{SPLIT}_{data_name}"] = data_of_split[SPLIT]
 
-    save_file = args.out_dest if args.out_dest.is_file() else args.out_dest / f"chest_{args.size}.npz"
+    if out_dest.is_dir():
+        out_dest /= f"chest_{args.size}.npz"
 
-    print(f"Saving {save_file}. This might take a while ...")
+    print(f"Saving {out_dest}. This might take a while ...")
 
-    np.savez_compressed(save_file, **name_to_array)
+    np.savez_compressed(out_dest, **name_to_array)
 
 
 if __name__ == '__main__':
