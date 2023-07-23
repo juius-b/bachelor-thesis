@@ -42,7 +42,7 @@ def main(args):
         n_samples = n_samples_of_split[SPLIT]
         images_of_split[SPLIT] = np.empty((n_samples, args.size, args.size), dtype=np.uint8)
 
-    with tqdm(desc="Preprocessing", total=len(split_info), unit="pic") as pbar:
+    with tqdm(desc="Processing", total=len(split_info), unit="pic") as pbar:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = set()
 
