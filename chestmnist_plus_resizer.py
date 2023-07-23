@@ -42,27 +42,27 @@ def main(args):
         n_samples = n_samples_of_split[SPLIT]
         images_of_split[SPLIT] = np.empty((n_samples, args.size, args.size), dtype=np.uint8)
 
-    # with tqdm(desc="Preprocessing", total=len(split_info), unit="pic") as pbar:
-    #     with concurrent.futures.ThreadPoolExecutor() as executor:
-    #         futures = set()
-    #
-    #         def preprocess(_info):
-    #             _, _split, _index, _image_id = _info
-    #
-    #             fp = args.source / f"{_image_id}.png"
-    #             with Image.open(fp.expanduser().resolve()) as im:
-    #                 if im.mode != "L":
-    #                     im = im.convert("L")
-    #                 im = im.resize((args.size, args.size), Image.BICUBIC)
-    #
-    #                 images_of_split[_split][_index] = np.asarray(im)
-    #
-    #         for info in split_info.itertuples():
-    #             future = executor.submit(preprocess, info)
-    #             future.add_done_callback(lambda _: pbar.update())
-    #             futures.add(future)
-    #
-    #         concurrent.futures.wait(futures)
+    with tqdm(desc="Preprocessing", total=len(split_info), unit="pic") as pbar:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = set()
+
+            def preprocess(_info):
+                _, _split, _index, _image_id = _info
+
+                fp = args.source / f"{_image_id}.png"
+                with Image.open(fp.expanduser().resolve()) as im:
+                    if im.mode != "L":
+                        im = im.convert("L")
+                    im = im.resize((args.size, args.size), Image.BICUBIC)
+
+                    images_of_split[_split][_index] = np.asarray(im)
+
+            for info in split_info.itertuples():
+                future = executor.submit(preprocess, info)
+                future.add_done_callback(lambda _: pbar.update())
+                futures.add(future)
+
+            concurrent.futures.wait(futures)
 
     chest_mnist = np.load(args.chest_mnist)
     labels_of_split = {SPLIT: chest_mnist[f"{SPLIT}_labels"] for SPLIT in SPLITS}
