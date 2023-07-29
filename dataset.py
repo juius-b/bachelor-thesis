@@ -66,15 +66,6 @@ class BreastDataset(NpzVisionDataset):
     classes = ["class1", "class2"]
 
 
-def create_dataset_init(name: str, *args, **kwargs):
-    def init(*_args, **_kwargs):
-        all_args = args + _args
-        all_kwargs = {**kwargs, **_kwargs}
-        return get_dataset_class(name)(*all_args, **all_kwargs)
-
-    return init
-
-
 def get_dataset_class(name: str) -> Type[NpzVisionDataset]:
     name = name.lower()
     try:
