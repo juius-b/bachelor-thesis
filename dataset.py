@@ -1,7 +1,8 @@
+from typing import Optional, Callable, List, Type, Any
+
 import numpy as np
 from PIL import Image
 from torchvision.datasets.vision import VisionDataset
-from typing import Optional, Callable, List, Type, Any
 
 
 class NpzVisionDataset(VisionDataset):
