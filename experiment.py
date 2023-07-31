@@ -2,6 +2,7 @@ import copy
 import logging
 import os
 from functools import partial
+from typing import Callable
 
 import hydra
 import torch
@@ -13,6 +14,7 @@ from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
+from torchvision.models import get_model_weights
 from torchvision.transforms import transforms
 from tqdm import trange, tqdm
 from tqdm.contrib import tenumerate
@@ -35,22 +37,27 @@ cs.store(name="config", node=ExperimentConfig)
 def main(cfg: ExperimentConfig):
     log.debug(f"Using config: {cfg}")
 
-    experiment_cfg = StageConfig()
+    stage_config = StageConfig()
 
-    experiment_cfg.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    stage_config.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    log.info(f"Using device: {experiment_cfg.device}")
+    log.info(f"Using device: {stage_config.device}")
 
-    imagenet_transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.Lambda(lambda img: img.convert("RGB")),
+    weights_enum = get_model_weights(cfg.model)
+    default_weights: weights_enum = getattr(weights_enum, "DEFAULT")
+    # of type torchvision.transforms._presets.ImageClassification
+    preprocess: Callable[..., nn.Module] = getattr(default_weights, "transforms")
+    size: int = getattr(preprocess, "crop_size")
+    model_transform = transforms.Compose([
+        transforms.Resize((size, size)),
+        transforms.Lambda(lambda img: img.convert("RGB")),  # all pre-trained models of torchvision use rgb input
         transforms.ToTensor(),
         transforms.Normalize(mean=[.5], std=[.5])
     ])
 
     npz_file_path = os.path.join(cfg.dataset.path, f"{cfg.dataset.name}.npz")
 
-    init_dataset = partial(get_dataset, cfg.dataset.name, npz_file_path, transform=imagenet_transform)
+    init_dataset = partial(get_dataset, cfg.dataset.name, npz_file_path, transform=model_transform)
 
     log.info("Loading training dataset")
 
@@ -76,28 +83,28 @@ def main(cfg: ExperimentConfig):
 
     model = get_tuned_model(cfg.model, num_classes)
 
-    experiment_cfg.model = model.to(experiment_cfg.device)
+    stage_config.model = model.to(stage_config.device)
 
-    log.info(f"Using model {cfg.model} of type {experiment_cfg.model.__class__.__name__}")
+    log.info(f"Using model {cfg.model} of type {stage_config.model.__class__.__name__}")
 
     problem_type = get_dataset_problem(cfg.dataset.name)
 
     log.info(f"Recognized classification problem: {problem_type}")
 
     if problem_type == "multilabel":
-        experiment_cfg.criterion = nn.BCEWithLogitsLoss()
-        experiment_cfg.targets_criterion_transform = nn.Identity()
+        stage_config.criterion = nn.BCEWithLogitsLoss()
+        stage_config.targets_criterion_transform = nn.Identity()
     else:
-        experiment_cfg.criterion = nn.CrossEntropyLoss()
-        experiment_cfg.targets_criterion_transform = lambda ts: torch.squeeze(ts, 1).to(torch.uint8)
+        stage_config.criterion = nn.CrossEntropyLoss()
+        stage_config.targets_criterion_transform = lambda ts: torch.squeeze(ts, 1).to(torch.uint8)
 
-    train_cfg = TrainingConfig(train_data_loader, experiment_cfg)
-    train_cfg.optimizer = Adam(experiment_cfg.model.parameters(), lr=cfg.learning_rate)
+    train_cfg = TrainingConfig(train_data_loader, stage_config)
+    train_cfg.optimizer = Adam(stage_config.model.parameters(), lr=cfg.learning_rate)
 
     milestones = map(int, [.5 * cfg.epochs, .75 * cfg.epochs])
     lr_scheduler = MultiStepLR(train_cfg.optimizer, milestones=milestones, gamma=cfg.gamma)
 
-    eval_cfg = EvaluationConfig(val_data_loader, experiment_cfg)
+    eval_cfg = EvaluationConfig(val_data_loader, stage_config)
     eval_cfg.is_multilabel_problem = problem_type == "multilabel"
 
     wandb.init(
@@ -105,7 +112,7 @@ def main(cfg: ExperimentConfig):
         config=OmegaConf.to_object(cfg)
     )
 
-    best_model = copy.deepcopy(experiment_cfg.model)
+    best_model = copy.deepcopy(stage_config.model)
     best_auc = 0
     best_epoch = 0
 
@@ -145,7 +152,7 @@ def main(cfg: ExperimentConfig):
             if best_auc < val_auc:
                 best_epoch = epoch
                 best_auc = val_auc
-                best_model = copy.deepcopy(experiment_cfg.model)
+                best_model = copy.deepcopy(stage_config.model)
 
                 log.info(f"Current best model in epoch {best_epoch + 1}; AUC@{best_auc:.2f}")
 
