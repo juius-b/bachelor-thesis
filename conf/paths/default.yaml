@@ -1,0 +1,7 @@
+root_dir: .
+
+dataset_dir: ${oc.env:HOME}/.medmnist+/
+
+run_dir: ${paths.root_dir}/runs/
+
+output_dir: ${hydra:runtime.output_dir}

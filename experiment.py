@@ -2,7 +2,6 @@ import copy
 import logging
 import os
 from functools import partial
-from typing import Callable
 
 import hydra
 import torch
@@ -30,10 +29,10 @@ log = logging.getLogger("EXPERIMENT")
 
 
 cs = ConfigStore.instance()
-cs.store(name="config", node=ExperimentConfig)
+cs.store(name="experiment", node=ExperimentConfig)
 
 
-@hydra.main(config_path=".", config_name="config", version_base=None)
+@hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: ExperimentConfig):
     log.debug(f"Using config: {cfg}")
 
@@ -46,8 +45,8 @@ def main(cfg: ExperimentConfig):
     weights_enum = get_model_weights(cfg.model)
     default_weights: weights_enum = getattr(weights_enum, "DEFAULT")
     # of type torchvision.transforms._presets.ImageClassification
-    preprocess: Callable[..., nn.Module] = getattr(default_weights, "transforms")
-    size: int = getattr(preprocess, "crop_size")
+    preprocess: partial[...] = getattr(default_weights, "transforms")
+    size: int = preprocess.keywords["crop_size"]
     model_transform = transforms.Compose([
         transforms.Resize((size, size)),
         transforms.Lambda(lambda img: img.convert("RGB")),  # all pre-trained models of torchvision use rgb input
@@ -55,9 +54,9 @@ def main(cfg: ExperimentConfig):
         transforms.Normalize(mean=[.5], std=[.5])
     ])
 
-    npz_file_path = os.path.join(cfg.dataset.path, f"{cfg.dataset.name}.npz")
+    npz_file_path = os.path.join(cfg.paths.dataset_dir, f"{cfg.dataset}.npz")
 
-    init_dataset = partial(get_dataset, cfg.dataset.name, npz_file_path, transform=model_transform)
+    init_dataset = partial(get_dataset, cfg.dataset, root=npz_file_path, transform=model_transform)
 
     log.info("Loading training dataset")
 
@@ -87,7 +86,7 @@ def main(cfg: ExperimentConfig):
 
     log.info(f"Using model {cfg.model} of type {stage_config.model.__class__.__name__}")
 
-    problem_type = get_dataset_problem(cfg.dataset.name)
+    problem_type = get_dataset_problem(cfg.dataset)
 
     log.info(f"Recognized classification problem: {problem_type}")
 
@@ -108,7 +107,7 @@ def main(cfg: ExperimentConfig):
     eval_cfg.is_multilabel_problem = problem_type == "multilabel"
 
     wandb.init(
-        project=f"bachelor-thesis-experiment-{cfg.dataset.name}-dev",
+        project=f"bachelor-thesis-experiment-dev",
         config=OmegaConf.to_object(cfg)
     )
 
@@ -128,7 +127,7 @@ def main(cfg: ExperimentConfig):
             auc_fn = multilabel_auc_measure
             acc_fn = partial(multilabel_accuracy_measure, exact=False)
 
-    output_dir = os.getcwd()
+    output_dir = cfg.paths.output_dir if cfg.paths.output_dir else os.getcwd()
 
     log.info(f"Starting training with learning rate {lr_scheduler.get_last_lr()[0]:f}")
 
