@@ -10,7 +10,7 @@ BUILTIN_TUNERS = {}
 
 def register_tuner(fn: Callable[[nn.Module, int], None]):
     sig = signature(fn)
-    key = sig.parameters[list(sig.parameters.keys())[0]].annotation
+    key = sig.parameters[list(sig.parameters.keys())[0]].annotation  # class of the model
     BUILTIN_TUNERS[key] = fn
     return fn
 
@@ -125,4 +125,3 @@ def tune_vgg(model: VGG, num_classes: int):
 @register_tuner
 def tune_vit(model: VisionTransformer, num_classes: int):
     tune_linear_in_sequential(model.heads, num_classes)
-

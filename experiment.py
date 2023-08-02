@@ -18,6 +18,7 @@ from torchvision.transforms import transforms
 from tqdm import trange, tqdm
 from tqdm.contrib import tenumerate
 from tqdm.contrib.logging import logging_redirect_tqdm
+from wandb.util import generate_id
 
 from configs import ExperimentConfig, StageConfig, TrainingConfig, EvaluationConfig
 from dataset import NpzVisionDataset, get_dataset_problem, get_dataset
@@ -106,11 +107,6 @@ def main(cfg: ExperimentConfig):
     eval_cfg = EvaluationConfig(val_data_loader, stage_config)
     eval_cfg.is_multilabel_problem = problem_type == "multilabel"
 
-    wandb.init(
-        project=f"bachelor-thesis-experiment-dev",
-        config=OmegaConf.to_object(cfg)
-    )
-
     best_model = copy.deepcopy(stage_config.model)
     best_auc = 0
     best_epoch = 0
@@ -129,10 +125,31 @@ def main(cfg: ExperimentConfig):
 
     output_dir = cfg.paths.output_dir if cfg.paths.output_dir else os.getcwd()
 
+    start_epoch = 0
+
+    if cfg.checkpoint:
+        checkpoint = torch.load(cfg.checkpoint, map_location="cpu")
+        model.load_state_dict(checkpoint["model"])
+        train_cfg.optimizer.load_state_dict(checkpoint["optimizer"])
+        lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+        start_epoch = checkpoint["epoch"] + 1
+        wandb_id = checkpoint["wandb_id"]
+
+        log.info("Found checkpoint to resume from")
+    else:
+        wandb_id = wandb.util.generate_id()
+
+    wandb.init(
+        project=f"bachelor-thesis-experiment-dev",
+        config=OmegaConf.to_object(cfg),
+        id=wandb_id,
+        resume="allow"
+    )
+
     log.info(f"Starting training with learning rate {lr_scheduler.get_last_lr()[0]:f}")
 
     with logging_redirect_tqdm():
-        for epoch in trange(cfg.epochs, desc="Training"):
+        for epoch in trange(start_epoch, cfg.epochs, desc="Training"):
             log.debug(f"Starting epoch {epoch}")
 
             train(train_cfg)
@@ -160,7 +177,8 @@ def main(cfg: ExperimentConfig):
                 "optimizer": train_cfg.optimizer.state_dict(),
                 "lr_scheduler": lr_scheduler.state_dict(),
                 "epoch": epoch,
-                "cfg": cfg
+                "cfg": cfg,
+                "wandb_id": wandb_id
             }
 
             torch.save(checkpoint, os.path.join(output_dir, "checkpoint.pth"))
