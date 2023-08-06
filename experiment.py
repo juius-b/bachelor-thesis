@@ -62,7 +62,7 @@ def main(cfg: ExperimentConfig):
     log.info("Loading training dataset")
 
     train_dataset = init_dataset()
-    
+
     log.info("Training dataset loaded")
 
     init_data_loader = partial(DataLoader, batch_size=cfg.batch_size, pin_memory=True)
@@ -146,6 +146,11 @@ def main(cfg: ExperimentConfig):
         resume="allow"
     )
 
+    checkpoint = {
+        "cfg": cfg,
+        "wandb_id": wandb_id
+    }
+
     log.info(f"Starting training with learning rate {lr_scheduler.get_last_lr()[0]:f}")
 
     with logging_redirect_tqdm():
@@ -172,14 +177,10 @@ def main(cfg: ExperimentConfig):
 
                 log.info(f"Current best model in epoch {best_epoch + 1}; AUC@{best_auc:.2f}")
 
-            checkpoint = {
-                "model": train_cfg.model.state_dict(),
-                "optimizer": train_cfg.optimizer.state_dict(),
-                "lr_scheduler": lr_scheduler.state_dict(),
-                "epoch": epoch,
-                "cfg": cfg,
-                "wandb_id": wandb_id
-            }
+            checkpoint["model"] = train_cfg.model.state_dict(),
+            checkpoint["optimizer"]: train_cfg.optimizer.state_dict()
+            checkpoint["lr_scheduler"]: lr_scheduler.state_dict()
+            checkpoint["epoch"]: epoch
 
             torch.save(checkpoint, os.path.join(output_dir, "checkpoint.pth"))
 
