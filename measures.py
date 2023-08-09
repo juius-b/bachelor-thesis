@@ -33,17 +33,17 @@ def binary_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
     return roc_auc_score(y_true, y_score)
 
 
+@torch.inference_mode()
 def multiclass_auc_measure(targets: torch.Tensor, outputs: torch.Tensor) -> float:
-    with torch.inference_mode():
-        n_samples, n_classes = outputs.shape
-        y_trues = torch.empty((n_classes, n_samples))
-        y_scores = torch.empty((n_classes, n_samples))
+    n_samples, n_classes = outputs.shape
+    y_trues = torch.empty((n_classes, n_samples))
+    y_scores = torch.empty((n_classes, n_samples))
 
-        squeezed_targets = torch.squeeze(targets)
+    squeezed_targets = torch.squeeze(targets)
 
-        for i in range(n_classes):
-            y_trues[i] = torch.where(squeezed_targets.eq(i), 1, 0)
-            y_scores[i] = outputs[:, i]
+    for i in range(n_classes):
+        y_trues[i] = torch.where(squeezed_targets.eq(i), 1, 0)
+        y_scores[i] = outputs[:, i]
 
     y_trues, y_scores = y_trues.cpu().numpy(), y_scores.cpu().numpy()
 

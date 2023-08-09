@@ -144,7 +144,7 @@ def main(cfg: ExperimentConfig):
         wandb_id = wandb.util.generate_id()
 
     wandb.init(
-        project=f"bachelor-thesis-experiment",
+        project=f"bachelor-thesis-experiment-dev",
         config=OmegaConf.to_object(cfg),
         tags=tags,
         resume="allow",
@@ -172,7 +172,7 @@ def main(cfg: ExperimentConfig):
             val_acc = acc_fn(targets, outputs)
             val_auc = auc_fn(targets, outputs)
 
-            pd.DataFrame(outputs).to_csv(f"{cfg.dataset}-val-{epoch + 1}@({val_auc:.2f},{val_acc:.2f}).csv")
+            pd.DataFrame(outputs.cpu()).to_csv(f"{cfg.dataset}-val-{epoch + 1}@({val_auc:.2f},{val_acc:.2f}).csv")
 
             log.debug(f"Validation done. AUC@{val_auc:.2f}, ACC@{val_acc:.2f}, LOSS@{val_loss:.2f}")
             wandb.log({"val_auc": val_auc, "val_acc": val_acc, "val_loss": val_loss})
@@ -213,7 +213,7 @@ def main(cfg: ExperimentConfig):
     test_auc = auc_fn(targets, outputs)
     test_acc = acc_fn(targets, outputs)
 
-    pd.DataFrame(outputs).to_csv(f"{cfg.dataset}-test@({test_auc:.2f},{test_acc:.2f}).csv")
+    pd.DataFrame(outputs.cpu()).to_csv(f"{cfg.dataset}-test@({test_auc:.2f},{test_acc:.2f}).csv")
 
     log.info(f"Model evaluated: AUC@{test_auc:.2f} & ACC@{test_acc:.2f} (& LOSS@{test_loss:.2f})")
     wandb.log({"test_auc": test_auc, "test_acc": test_acc, "test_loss": test_loss})
