@@ -128,6 +128,8 @@ def main(cfg: ExperimentConfig):
 
     start_epoch = 0
 
+    tags = [cfg.dataset, cfg.model]
+
     if cfg.checkpoint:
         checkpoint = torch.load(cfg.checkpoint, map_location="cpu")
         model.load_state_dict(checkpoint["model"])
@@ -135,16 +137,18 @@ def main(cfg: ExperimentConfig):
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         start_epoch = checkpoint["epoch"] + 1
         wandb_id = checkpoint["wandb_id"]
+        tags.append("resumed")
 
         log.info("Found checkpoint to resume from")
     else:
         wandb_id = wandb.util.generate_id()
 
     wandb.init(
-        project=f"bachelor-thesis-experiment-dev",
+        project=f"bachelor-thesis-experiment",
         config=OmegaConf.to_object(cfg),
-        id=wandb_id,
-        resume="allow"
+        tags=tags,
+        resume="allow",
+        id=wandb_id
     )
 
     checkpoint = {
