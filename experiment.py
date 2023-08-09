@@ -2,6 +2,7 @@ import copy
 import logging
 import os
 from functools import partial
+from pathlib import Path
 
 import hydra
 import pandas as pd
@@ -125,6 +126,7 @@ def main(cfg: ExperimentConfig):
             acc_fn = partial(multilabel_accuracy_measure, exact=False)
 
     output_dir = cfg.paths.output_dir if cfg.paths.output_dir else os.getcwd()
+    output_dir = Path(output_dir)
 
     start_epoch = 0
 
@@ -172,7 +174,8 @@ def main(cfg: ExperimentConfig):
             val_acc = acc_fn(targets, outputs)
             val_auc = auc_fn(targets, outputs)
 
-            pd.DataFrame(outputs.cpu()).to_csv(f"{cfg.dataset}-val-{epoch + 1}@({val_auc:.2f},{val_acc:.2f}).csv")
+            pd.DataFrame(outputs.cpu()).to_csv(
+                (output_dir / f"{cfg.dataset}-val-{epoch}@{cfg.model}({val_auc:.2f},{val_acc:.2f}).csv"), index=False)
 
             log.debug(f"Validation done. AUC@{val_auc:.2f}, ACC@{val_acc:.2f}, LOSS@{val_loss:.2f}")
             wandb.log({"val_auc": val_auc, "val_acc": val_acc, "val_loss": val_loss})
@@ -182,14 +185,14 @@ def main(cfg: ExperimentConfig):
                 best_auc = val_auc
                 best_model = copy.deepcopy(stage_config.model)
 
-                log.info(f"Current best model in epoch {best_epoch + 1}; AUC@{best_auc:.2f}")
+                log.info(f"Current best model in epoch {best_epoch}: AUC@{best_auc:.2f}")
 
             checkpoint["model"] = train_cfg.model.state_dict(),
             checkpoint["optimizer"]: train_cfg.optimizer.state_dict()
             checkpoint["lr_scheduler"]: lr_scheduler.state_dict()
             checkpoint["epoch"]: epoch
 
-            torch.save(checkpoint, os.path.join(output_dir, "checkpoint.pth"))
+            torch.save(checkpoint, (output_dir / f"{cfg.model}-{cfg.dataset}-checkpoint.pth"))
 
     log.info(f"Training done.")
 
@@ -201,7 +204,7 @@ def main(cfg: ExperimentConfig):
         "model": best_model.state_dict()
     }
 
-    torch.save(state, os.path.join(output_dir, f"model_{best_epoch}@{best_auc:.2f}AUC.pth"))
+    torch.save(state, (output_dir / f"model_{best_epoch}@{best_auc:.2f}AUC.pth"))
 
     test_dataset = init_dataset(split="test")
 
@@ -213,7 +216,8 @@ def main(cfg: ExperimentConfig):
     test_auc = auc_fn(targets, outputs)
     test_acc = acc_fn(targets, outputs)
 
-    pd.DataFrame(outputs.cpu()).to_csv(f"{cfg.dataset}-test@({test_auc:.2f},{test_acc:.2f}).csv")
+    pd.DataFrame(outputs.cpu()).to_csv(
+        (output_dir / f"{cfg.dataset}-test@{cfg.model}({test_auc:.2f},{test_acc:.2f}).csv"), index=False)
 
     log.info(f"Model evaluated: AUC@{test_auc:.2f} & ACC@{test_acc:.2f} (& LOSS@{test_loss:.2f})")
     wandb.log({"test_auc": test_auc, "test_acc": test_acc, "test_loss": test_loss})
