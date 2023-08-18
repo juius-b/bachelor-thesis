@@ -94,7 +94,7 @@ def main(cfg: Config):
 
             concurrent.futures.wait(futures)
 
-    exceptions = [future.exception() for future in futures if future.excpetion()]
+    exceptions = [future.exception() for future in futures if future.exception()]
 
     if not len(exceptions) == 0:
         print(f'Processing the source dataset was not without exceptions.')
