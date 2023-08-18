@@ -42,8 +42,22 @@ def process(fp, info, params: Parameters):
     split, index = info
 
     with Image.open(fp) as im:
+        # ensure correct dimensions for array or force specific mode if specified by user
         if im.mode != params.mode:
             im = im.convert(params.mode)
+
+        width, height = im.size
+        # whether to center-crop
+        if width != height:
+            short_edge_len = min(width, height)
+
+            left = (width - short_edge_len) // 2
+            upper = (height - short_edge_len) // 2
+            right = left + short_edge_len
+            lower = upper + short_edge_len
+
+            im = im.crop((left, upper, right, lower))
+
         im = im.resize((params.size, params.size), Image.BICUBIC)
 
         params.images_of_split[split][index] = np.asarray(im)
@@ -193,9 +207,9 @@ def validate_args(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='MedMNISTAdjuster',
-                                     description='Resize any source dataset of MedMNIST datasets to any size and save '
-                                                 'them to an npz file with the labels in the same order as the '
-                                                 'original MedMNIST dataset.')
+                                     description='Resize and potentially center-crop any source dataset of MedMNIST '
+                                                 'datasets to any size and save them to an npz file with the labels '
+                                                 'in the same order as the original MedMNIST dataset.')
 
     parser.add_argument('source', type=str,
                         help='directory holding the source images from the MedMNIST dataset at any depth')
