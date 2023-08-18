@@ -8,6 +8,7 @@ import argparse
 
 import concurrent.futures
 import random
+from typing import Dict
 
 import numpy as np
 
@@ -28,6 +29,24 @@ class Config:
     med_mnist: str
     out_dest: Path
     flag: str
+
+
+@dataclass
+class Parameters:
+    mode: str
+    size: int
+    images_of_split: Dict[str, np.ndarray]
+
+
+def process(fp, info, params: Parameters):
+    split, index = info
+
+    with Image.open(fp) as im:
+        if im.mode != params.mode:
+            im = im.convert(params.mode)
+        im = im.resize((params.size, params.size), Image.BICUBIC)
+
+        params.images_of_split[split][index] = np.asarray(im)
 
 
 def main(cfg: Config):
@@ -51,20 +70,10 @@ def main(cfg: Config):
 
     info_of_image = {im_id: (split, idx) for im_id, split, idx in split_info.itertuples()}
 
+    futures = set()
+    params = Parameters(cfg.mode, cfg.size, images_of_split)
     with tqdm(desc='Processing', total=len(split_info), unit='pic') as pbar:
         with concurrent.futures.ProcessPoolExecutor() as executor:  # to avoid Python's GIL
-            futures = set()
-
-            def process(_fp, _info):
-                _split, _index = _info
-
-                with Image.open(_fp) as im:
-                    if im.mode != cfg.mode:
-                        im = im.convert(cfg.mode)
-                    im = im.resize((cfg.size, cfg.size), Image.BICUBIC)
-
-                    images_of_split[_split][_index] = np.asarray(im)
-
             for child in cfg.source.rglob('*'):
                 if child.is_file():
                     try:
@@ -73,7 +82,7 @@ def main(cfg: Config):
                         pbar.write(f'Skipping {child.name}')
                         continue
 
-                    future = executor.submit(process, child, info)
+                    future = executor.submit(process, child, info, params)
                     future.add_done_callback(lambda _: pbar.update())
                     futures.add(future)
 
@@ -94,6 +103,7 @@ def main(cfg: Config):
 
             concurrent.futures.wait(futures)
 
+    print("Checking for exception that might have occurred during processing ...")
     exceptions = [future.exception() for future in futures if future.exception()]
 
     if not len(exceptions) == 0:
@@ -106,6 +116,8 @@ def main(cfg: Config):
             for exception in exceptions:
                 print(exception)
         sys.exit(6)
+    else:
+        print("No exceptions occurred during processing")
 
     labels_of_split = {SPLIT: med_mnist[f'{SPLIT}_labels'] for SPLIT in SPLITS}
 
