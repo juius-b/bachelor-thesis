@@ -53,3 +53,4 @@ urllib3==2.0.3
 wandb==0.15.4
 
 pandas~=2.0.3
+medmnist~=2.2.3

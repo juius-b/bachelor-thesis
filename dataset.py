@@ -1,5 +1,6 @@
 from typing import Optional, Callable, List, Type, Any
 
+import medmnist.info
 import numpy as np
 from PIL import Image
 from torchvision.datasets.vision import VisionDataset
@@ -51,20 +52,39 @@ def register_dataset(name: str, problem: str):
     return wrapper
 
 
+@register_dataset("path", "multiclass")
+class PathDataset(NpzVisionDataset):
+    classses = medmnist.info.INFO["pathmnist"]["label"].values()
+
+
 @register_dataset("chest", "multilabel")
 class ChestDataset(NpzVisionDataset):
-    classes = ["atelectasis", "cardiomegaly", "consolidation", "edema", "effusion", "emphysema", "fibrosis", "hernia",
-               "infiltration", "mass", "nodule", "pleural_thickening", "pneumonia", "pneumothorax"]
+    classes = medmnist.info.INFO["chestmnist"]["label"].values()
+
+
+@register_dataset("derma", "multiclass")
+class DermaDataset(NpzVisionDataset):
+    classes = medmnist.info.INFO["dermamnist"]["label"].values()
+
+
+@register_dataset("oct", "multiclass")
+class OCTDataset(NpzVisionDataset):
+    classes = medmnist.info.INFO["octmnist"]["label"].values()
 
 
 @register_dataset("retina", "multiclass")
 class RetinaDataset(NpzVisionDataset):
-    classes = [f"class{i}" for i in range(5)]
+    classes = medmnist.info.INFO["retinamnist"]["label"].values()
 
 
 @register_dataset("breast", "binary")
 class BreastDataset(NpzVisionDataset):
-    classes = ["class1", "class2"]
+    classes = medmnist.info.INFO["breastmnist"]["label"].values()
+
+
+@register_dataset("blood", "multiclass")
+class BloodDataset(NpzVisionDataset):
+    classes = medmnist.info.INFO["bloodmnist"]["label"].values()
 
 
 def get_dataset_class(name: str) -> Type[NpzVisionDataset]:
