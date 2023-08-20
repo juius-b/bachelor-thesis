@@ -87,7 +87,7 @@ def main(cfg: Config):
     futures = set()
     params = Parameters(cfg.mode, cfg.size, images_of_split)
     with tqdm(desc='Processing', total=len(split_info), unit='pic') as pbar:
-        with concurrent.futures.ProcessPoolExecutor() as executor:  # to avoid Python's GIL
+        with concurrent.futures.ThreadPoolExecutor() as executor:
             for child in cfg.source.rglob('*'):
                 if child.is_file():
                     try:
@@ -99,6 +99,8 @@ def main(cfg: Config):
                     future = executor.submit(process, child, info, params)
                     future.add_done_callback(lambda _: pbar.update())
                     futures.add(future)
+
+            pbar.write("All processing queued. Checking whether dataset is incomplete")
 
             missing_ims = list(info_of_image.keys())
 
@@ -114,6 +116,8 @@ def main(cfg: Config):
                     random_im_ids_str = ', '.join(random_im_ids[:-1]) + f', and {random_im_ids[-1]}'
                     pbar.write(f'Missing {len(missing_ims)} images such as {random_im_ids_str}')
                 sys.exit(5)
+
+            pbar.write("Dataset complete. Waiting for processing to finish ...")
 
             concurrent.futures.wait(futures)
 
