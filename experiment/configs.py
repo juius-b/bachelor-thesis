@@ -19,6 +19,7 @@ class ExperimentConfig:
     dataset: str
     epochs: int
     batch_size: int
+    iter_size: int
     learning_rate: float
     gamma: float
     checkpoint: Optional[str]
@@ -44,6 +45,7 @@ class ExtendedStageConfig(StageConfig):
 @dataclass
 class TrainingConfig(ExtendedStageConfig):
     optimizer: Optimizer
+    iter_size: int
 
     def __init__(self, data_loader: DataLoader, experiment_cfg: StageConfig):
         super().__init__(data_loader, experiment_cfg)

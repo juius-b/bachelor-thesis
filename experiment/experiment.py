@@ -1,15 +1,14 @@
 import copy
+import hydra
 import logging
 import os
-from functools import partial
-from pathlib import Path
-
-import hydra
 import pandas as pd
 import torch
 import wandb
+from functools import partial
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
+from pathlib import Path
 from sklearn.metrics import roc_auc_score
 from torch import nn
 from torch.optim import Adam
@@ -20,7 +19,6 @@ from torchvision.transforms import transforms
 from tqdm import trange, tqdm
 from tqdm.contrib import tenumerate
 from tqdm.contrib.logging import logging_redirect_tqdm
-from wandb.util import generate_id
 
 from configs import ExperimentConfig, StageConfig, TrainingConfig, EvaluationConfig
 from dataset import NpzVisionDataset, get_dataset_problem, get_dataset
@@ -102,6 +100,7 @@ def main(cfg: ExperimentConfig):
 
     train_cfg = TrainingConfig(train_data_loader, stage_config)
     train_cfg.optimizer = Adam(stage_config.model.parameters(), lr=cfg.learning_rate)
+    train_cfg.iter_size = cfg.iter_size
 
     milestones = map(int, [.5 * cfg.epochs, .75 * cfg.epochs])
     lr_scheduler = MultiStepLR(train_cfg.optimizer, milestones=milestones, gamma=cfg.gamma)
@@ -159,6 +158,7 @@ def main(cfg: ExperimentConfig):
     }
 
     log.info(f"Starting training with learning rate {lr_scheduler.get_last_lr()[0]:f}")
+    log.info(f"Effective batch size: {cfg.batch_size * cfg.iter_size}")
 
     with logging_redirect_tqdm():
         for epoch in trange(start_epoch, cfg.epochs, desc="Training"):
@@ -230,9 +230,10 @@ def train(cfg: TrainingConfig):
 
     loss_sum = torch.tensor(0., device=cfg.device)
 
-    for images, targets in tqdm(cfg.data_loader, desc="Learning", total=len(cfg.data_loader), leave=False):
-        cfg.optimizer.zero_grad()
+    n_batches = 0
 
+    cfg.optimizer.zero_grad()
+    for images, targets in tqdm(cfg.data_loader, desc="Learning", total=len(cfg.data_loader), leave=False):
         images, targets = images.to(cfg.device), targets.to(images.dtype).to(cfg.device)
 
         outputs = cfg.model(images)
@@ -241,7 +242,12 @@ def train(cfg: TrainingConfig):
         loss_sum += loss.detach()
 
         loss.backward()
-        cfg.optimizer.step()
+
+        n_batches += 1
+
+        if n_batches % cfg.iter_size == 0 or n_batches == len(cfg.data_loader):
+            cfg.optimizer.step()
+            cfg.optimizer.zero_grad()
 
     train_loss = loss_sum / len(cfg.data_loader)
 
