@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 
 from torch import device, nn, Tensor
 from torch.optim import Optimizer
@@ -13,8 +13,15 @@ class PathsConfig:
 
 
 @dataclass
+class WandbConfig:
+    project: str
+    add_tags: List[str]
+
+
+@dataclass
 class ExperimentConfig:
     paths: PathsConfig
+    wandb: WandbConfig
     model: str
     dataset: str
     epochs: int

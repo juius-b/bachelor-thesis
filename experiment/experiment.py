@@ -129,7 +129,7 @@ def main(cfg: ExperimentConfig):
 
     start_epoch = 0
 
-    tags = [cfg.dataset, cfg.model]
+    tags = [cfg.model, cfg.dataset] + cfg.wandb.add_tags
 
     if cfg.checkpoint:
         checkpoint = torch.load(cfg.checkpoint, map_location="cpu")
@@ -145,7 +145,7 @@ def main(cfg: ExperimentConfig):
         wandb_id = wandb.util.generate_id()
 
     wandb.init(
-        project=f"bachelor-thesis-experiment-dev",
+        project=cfg.wandb.project,
         config=OmegaConf.to_object(cfg),
         tags=tags,
         resume="allow",

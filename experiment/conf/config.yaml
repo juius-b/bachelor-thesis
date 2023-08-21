@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - paths: default
+  - wandb: default
   - hydra: default
 
 
