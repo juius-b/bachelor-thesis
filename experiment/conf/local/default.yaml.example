@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher@_here_: ray_aws
+
+paths:
+    dataset_dir: /mnt/example/data/
+
+epochs: 42
+
+hydra:
+  job:
+    env_set:
+      MY_VAR: foo
+      MY_KEY: bar

@@ -166,3 +166,6 @@ outputs
 
 # Weights and Biases
 experiment/wandb
+
+# Configuration file
+experiment/conf/local/default.yaml

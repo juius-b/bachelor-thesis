@@ -4,6 +4,7 @@ defaults:
   - wandb: default
   - hydra: default
   - experiment: null
+  - optional local: default
 
 
 model: resnet18
