@@ -1,0 +1,5 @@
+# @package _global_
+
+model: efficientnet_v2_s
+batch_size: 32
+iter_size: 4

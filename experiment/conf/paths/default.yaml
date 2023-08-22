@@ -1,6 +1,6 @@
 root_dir: .
 
-dataset_dir: ${oc.env:HOME}/.medmnist+/
+dataset_dir: ???
 
 run_dir: ${paths.root_dir}/runs/
 

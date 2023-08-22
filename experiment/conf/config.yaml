@@ -3,6 +3,7 @@ defaults:
   - paths: default
   - wandb: default
   - hydra: default
+  - experiment: null
 
 
 model: resnet18
