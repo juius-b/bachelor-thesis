@@ -71,6 +71,11 @@ class OCTDataset(NpzVisionDataset):
     classes = medmnist.info.INFO["octmnist"]["label"].values()
 
 
+@register_dataset("pneumonia", "binary")
+class PneumoniaDataset(NpzVisionDataset):
+    classes = medmnist.info.INFO["pneumoniamnist"]["label"].values()
+
+
 @register_dataset("retina", "multiclass")
 class RetinaDataset(NpzVisionDataset):
     classes = medmnist.info.INFO["retinamnist"]["label"].values()
