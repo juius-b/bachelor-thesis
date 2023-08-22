@@ -53,7 +53,7 @@ def register_dataset(name: str, problem: str):
 
 @register_dataset("path", "multiclass")
 class PathDataset(NpzVisionDataset):
-    classses = medmnist.info.INFO["pathmnist"]["label"].values()
+    classes = medmnist.info.INFO["pathmnist"]["label"].values()
 
 
 @register_dataset("chest", "multilabel")
