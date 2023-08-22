@@ -91,6 +91,11 @@ class BloodDataset(NpzVisionDataset):
     classes = medmnist.info.INFO["bloodmnist"]["label"].values()
 
 
+@register_dataset("tissue", "multiclass")
+class TissueDataset(NpzVisionDataset):
+    classes = medmnist.info.INFO["tissuemnist"]["label"].values()
+
+
 def get_dataset_class(name: str) -> Type[NpzVisionDataset]:
     name = name.lower()
     try:
