@@ -163,8 +163,10 @@ def main(cfg: ExperimentConfig):
         for epoch in trange(start_epoch, cfg.epochs, desc="Training"):
             log.debug(f"Starting epoch {epoch}")
 
-            train(train_cfg)
+            train_loss = train(train_cfg)
             lr_scheduler.step()
+
+            wandb.log({"train_loss": train_loss}, epoch)
 
             log.debug(f"Epoch done. Learning rate now: {lr_scheduler.get_last_lr()[0]:f}")
             log.debug("Starting validation")
@@ -177,7 +179,7 @@ def main(cfg: ExperimentConfig):
                 (output_dir / f"{cfg.dataset}-val-{epoch}@{cfg.model}({val_auc:.2f},{val_acc:.2f}).csv"), index=False)
 
             log.debug(f"Validation done. AUC@{val_auc:.2f}, ACC@{val_acc:.2f}, LOSS@{val_loss:.2f}")
-            wandb.log({"val_auc": val_auc, "val_acc": val_acc, "val_loss": val_loss})
+            wandb.log({"val_auc": val_auc, "val_acc": val_acc, "val_loss": val_loss}, epoch)
 
             if best_auc < val_auc:
                 best_epoch = epoch
@@ -251,7 +253,8 @@ def train(cfg: TrainingConfig):
     train_loss = loss_sum / len(cfg.data_loader)
 
     log.debug(f"Training loss this epoch: {train_loss:.2f}")
-    wandb.log({"train_loss": train_loss})
+
+    return train_loss
 
 
 def evaluate(cfg: EvaluationConfig, leave_pbar: bool = True):
