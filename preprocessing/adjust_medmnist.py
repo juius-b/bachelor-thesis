@@ -1,21 +1,15 @@
-import os
-import sys
-from dataclasses import dataclass
-
-from pathlib import Path
-
 import argparse
-
 import concurrent.futures
-import random
-from typing import Dict
-
 import numpy as np
-
+import os
 import pandas as pd
-from tqdm import tqdm
+import random
+import sys
 from PIL import Image
-
+from dataclasses import dataclass
+from pathlib import Path
+from tqdm import tqdm
+from typing import Dict
 
 SPLITS = ['train', 'val', 'test']
 

@@ -1,9 +1,8 @@
 from dataclasses import dataclass
-from typing import Callable, Optional, List
-
 from torch import device, nn, Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+from typing import Callable, Optional, List
 
 
 @dataclass

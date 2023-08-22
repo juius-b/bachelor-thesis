@@ -1,9 +1,8 @@
 from inspect import signature
-from typing import Union, Callable
-
 from torch import nn
 from torchvision.models import get_model, ResNet, AlexNet, ConvNeXt, DenseNet, EfficientNet, GoogLeNet, Inception3, \
     MaxVit, MNASNet, MobileNetV2, MobileNetV3, RegNet, ShuffleNetV2, SqueezeNet, SwinTransformer, VGG, VisionTransformer
+from typing import Union, Callable
 
 BUILTIN_TUNERS = {}
 
