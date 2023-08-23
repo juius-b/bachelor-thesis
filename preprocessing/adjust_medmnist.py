@@ -9,7 +9,7 @@ from PIL import Image
 from dataclasses import dataclass
 from pathlib import Path
 from tqdm import tqdm
-from typing import Dict
+from typing import Dict, Optional
 
 SPLITS = ['train', 'val', 'test']
 
@@ -30,6 +30,8 @@ class Parameters:
     mode: str
     size: int
     images_of_split: Dict[str, np.ndarray]
+    center_crop: Optional[bool] = True
+    center_crop_size: Optional[int] = None
 
 
 def process(fp, info, params: Parameters):
@@ -42,13 +44,15 @@ def process(fp, info, params: Parameters):
 
         width, height = im.size
         # whether to center-crop
-        if width != height:
-            short_edge_len = min(width, height)
+        if params.center_crop and width != height:
+            if not params.center_crop_size:
+                # length of the short edge
+                params.center_crop_size = min(width, height)
 
-            left = (width - short_edge_len) // 2
-            upper = (height - short_edge_len) // 2
-            right = left + short_edge_len
-            lower = upper + short_edge_len
+            left = (width - params.center_crop_size) // 2
+            upper = (height - params.center_crop_size) // 2
+            right = left + params.center_crop_size
+            lower = upper + params.center_crop_size
 
             im = im.crop((left, upper, right, lower))
 
@@ -79,7 +83,14 @@ def main(cfg: Config):
     info_of_image = {im_id: (split, idx) for im_id, split, idx in split_info.itertuples()}
 
     futures = set()
+
     params = Parameters(cfg.mode, cfg.size, images_of_split)
+
+    if cfg.flag == "derma":
+        params.center_crop = False
+    if cfg.flag == "blood":
+        params.center_crop_size = 200
+
     with tqdm(desc='Processing', total=len(split_info), unit='pic') as pbar:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for child in cfg.source.rglob('*'):
@@ -217,7 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--medmnist', '--med-mnist', default='~/.medmnist', type=str, dest='med_mnist',
                         help='MedMNIST npz file from which the labels are copied or the parent directory of the file. '
                              'Defaults to ~/.medmnist')
-    parser.add_argument('--flag', default=None, type=str,
+    parser.add_argument('--flag', default=None, type=str.lower,
                         help='flag of the dataset. E.g., "path" for PathMNIST. Can be deduced from split_info and '
                              'the original MedMNIST npz file if at least one is referencing a file and following the '
                              'naming convention')
