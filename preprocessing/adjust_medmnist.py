@@ -86,14 +86,20 @@ def main(cfg: Config):
 
     params = Parameters(cfg.mode, cfg.size, images_of_split)
 
-    if cfg.flag == "derma":
+    if cfg.flag == 'derma':
         params.center_crop = False
-    if cfg.flag == "blood":
+    if cfg.flag == 'blood':
         params.center_crop_size = 200
+
+    pattern = '*'
+    if cfg.flag == 'retina':
+        pattern = '**/regular_fundus_images/**/*'  # disregard ultra
+    elif cfg.flag == 'tissue':
+        pattern = '**/All_3D/**/*'  # disregard masks
 
     with tqdm(desc='Processing', total=len(split_info), unit='pic') as pbar:
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            for child in cfg.source.rglob('*'):
+            for child in cfg.source.rglob(pattern):
                 if child.is_file():
                     try:
                         info = info_of_image.pop(child.stem)
@@ -105,7 +111,7 @@ def main(cfg: Config):
                     future.add_done_callback(lambda _: pbar.update())
                     futures.add(future)
 
-            pbar.write("All processing queued. Checking whether dataset is incomplete")
+            pbar.write('All processing queued. Checking whether dataset is incomplete')
 
             missing_ims = list(info_of_image.keys())
 
@@ -122,11 +128,11 @@ def main(cfg: Config):
                     pbar.write(f'Missing {len(missing_ims)} images such as {random_im_ids_str}')
                 sys.exit(5)
 
-            pbar.write("Dataset complete. Waiting for processing to finish ...")
+            pbar.write('Dataset complete. Waiting for processing to finish ...')
 
             concurrent.futures.wait(futures)
 
-    print("Checking for exception that might have occurred during processing ...")
+    print('Checking for exception that might have occurred during processing ...')
     exceptions = [future.exception() for future in futures if future.exception()]
 
     if not len(exceptions) == 0:
@@ -140,7 +146,7 @@ def main(cfg: Config):
                 print(exception)
         sys.exit(6)
     else:
-        print("No exceptions occurred during processing")
+        print('No exceptions occurred during processing')
 
     labels_of_split = {SPLIT: med_mnist[f'{SPLIT}_labels'] for SPLIT in SPLITS}
 
