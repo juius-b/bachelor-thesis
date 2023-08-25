@@ -30,7 +30,6 @@ class Parameters:
     mode: str
     size: int
     images_of_split: Dict[str, np.ndarray]
-    center_crop: Optional[bool] = True
     center_crop_size: Optional[int] = None
 
 
@@ -44,7 +43,7 @@ def process(fp, info, params: Parameters):
 
         width, height = im.size
         # whether to center-crop
-        if params.center_crop and width != height:
+        if width != height:
             if not params.center_crop_size:
                 # length of the short edge
                 center_crop_size = min(width, height)
@@ -88,8 +87,6 @@ def main(cfg: Config):
 
     params = Parameters(cfg.mode, cfg.size, images_of_split)
 
-    if cfg.flag == 'derma':
-        params.center_crop = False
     if cfg.flag == 'blood':
         params.center_crop_size = 200
 
