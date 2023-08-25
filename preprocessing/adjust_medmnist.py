@@ -47,12 +47,14 @@ def process(fp, info, params: Parameters):
         if params.center_crop and width != height:
             if not params.center_crop_size:
                 # length of the short edge
-                params.center_crop_size = min(width, height)
+                center_crop_size = min(width, height)
+            else:
+                center_crop_size = params.center_crop_size
 
-            left = (width - params.center_crop_size) // 2
-            upper = (height - params.center_crop_size) // 2
-            right = left + params.center_crop_size
-            lower = upper + params.center_crop_size
+            left = (width - center_crop_size) // 2
+            upper = (height - center_crop_size) // 2
+            right = left + center_crop_size
+            lower = upper + center_crop_size
 
             im = im.crop((left, upper, right, lower))
 
