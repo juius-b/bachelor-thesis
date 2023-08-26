@@ -1,15 +1,16 @@
 import argparse
 import concurrent.futures
-import numpy as np
 import os
-import pandas as pd
 import random
 import sys
-from PIL import Image
 from dataclasses import dataclass
 from pathlib import Path
-from tqdm import tqdm
 from typing import Dict, Optional
+
+import numpy as np
+import pandas as pd
+from PIL import Image
+from tqdm import tqdm
 
 SPLITS = ['train', 'val', 'test']
 
@@ -31,35 +32,53 @@ class Parameters:
     size: int
     images_of_split: Dict[str, np.ndarray]
     center_crop_size: Optional[int] = None
+    axial_max_projection: bool = False
 
 
 def process(fp, info, params: Parameters):
     split, index = info
 
     with Image.open(fp) as im:
+        if params.axial_max_projection:
+            im = axial_max_proj(im)
         # ensure correct dimensions for array or force specific mode if specified by user
         if im.mode != params.mode:
             im = im.convert(params.mode)
 
         width, height = im.size
-        # whether to center-crop
         if width != height:
-            if not params.center_crop_size:
-                # length of the short edge
-                center_crop_size = min(width, height)
-            else:
-                center_crop_size = params.center_crop_size
-
-            left = (width - center_crop_size) // 2
-            upper = (height - center_crop_size) // 2
-            right = left + center_crop_size
-            lower = upper + center_crop_size
-
-            im = im.crop((left, upper, right, lower))
+            im = center_crop(im, params.center_crop_size)
 
         im = im.resize((params.size, params.size), Image.BICUBIC)
 
         params.images_of_split[split][index] = np.asarray(im)
+
+
+def center_crop(im, size):
+    width, height = im.size
+    if not size:
+        # length of the short edge
+        size = min(width, height)
+    left = (width - size) // 2
+    upper = (height - size) // 2
+    right = left + size
+    lower = upper + size
+    im = im.crop((left, upper, right, lower))
+    return im
+
+
+def axial_max_proj(im):
+    if hasattr(im, 'n_frames'):
+        n_slices = im.n_frames
+    else:
+        n_slices = 1
+    slices = np.empty((n_slices, *im.size))
+    for i in range(n_slices):
+        im.seek(i)
+        im_slice = np.asarray(im)
+        slices[i] = im_slice
+    max_projection = np.max(slices, axis=0)
+    return Image.fromarray(max_projection)
 
 
 def main(cfg: Config):
@@ -89,6 +108,8 @@ def main(cfg: Config):
 
     if cfg.flag == 'blood':
         params.center_crop_size = 200
+    if cfg.flag == 'tissue':
+        params.axial_max_projection = True
 
     pattern = '*'
     if cfg.flag == 'retina':
@@ -208,15 +229,7 @@ def validate_args(args):
     else:
         args.out_dest.parent.mkdir(parents=True, exist_ok=True)
 
-    return Config(
-        args.split_info,
-        args.size,
-        args.mode,
-        args.source,
-        args.med_mnist,
-        args.out_dest,
-        args.flag
-    )
+    return Config(args.split_info, args.size, args.mode, args.source, args.med_mnist, args.out_dest, args.flag)
 
 
 if __name__ == '__main__':
