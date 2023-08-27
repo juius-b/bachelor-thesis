@@ -1,15 +1,15 @@
 import copy
-import hydra
 import logging
 import os
-import pandas as pd
-import torch
-import wandb
 from functools import partial
+from pathlib import Path
+
+import hydra
+import medmnist
+import pandas as pd
+import wandb
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
-from pathlib import Path
-from sklearn.metrics import roc_auc_score
 from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
@@ -22,8 +22,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from configs import ExperimentConfig, StageConfig, TrainingConfig, EvaluationConfig
 from dataset import NpzVisionDataset, get_dataset_problem, get_dataset
-from measures import non_multilabel_accuracy_measure, multilabel_accuracy_measure, binary_auc_measure, \
-    multiclass_auc_measure, multilabel_auc_measure
+from measures import *
 from tuning import get_tuned_model
 
 log = logging.getLogger("EXPERIMENT")
@@ -47,12 +46,10 @@ def main(cfg: ExperimentConfig):
     # of type torchvision.transforms._presets.ImageClassification
     preprocess: partial[...] = getattr(default_weights, "transforms")
     size: int = preprocess.keywords["crop_size"]
-    model_transform = transforms.Compose([
-        transforms.Resize((size, size)),
-        transforms.Lambda(lambda img: img.convert("RGB")),  # all pre-trained models of torchvision use rgb input
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[.5], std=[.5])
-    ])
+    model_transform = transforms.Compose(
+        [transforms.Resize((size, size)), transforms.Lambda(lambda img: img.convert("RGB")),
+            # all pre-trained models of torchvision use rgb input
+            transforms.ToTensor(), transforms.Normalize(mean=[.5], std=[.5])])
 
     npz_file_path = os.path.join(cfg.paths.dataset_dir, f"{cfg.dataset}.npz")
 
@@ -93,9 +90,13 @@ def main(cfg: ExperimentConfig):
     if problem_type == "multilabel":
         stage_config.criterion = nn.BCEWithLogitsLoss()
         stage_config.targets_criterion_transform = nn.Identity()
+
+        activation_fn = nn.Sigmoid()
     else:
         stage_config.criterion = nn.CrossEntropyLoss()
         stage_config.targets_criterion_transform = lambda ts: torch.squeeze(ts, 1).to(torch.uint8)
+
+        activation_fn = nn.Softmax(dim=1)
 
     train_cfg = TrainingConfig(train_data_loader, stage_config)
     train_cfg.optimizer = Adam(stage_config.model.parameters(), lr=cfg.learning_rate)
@@ -126,6 +127,8 @@ def main(cfg: ExperimentConfig):
     output_dir = cfg.paths.output_dir if cfg.paths.output_dir else os.getcwd()
     output_dir = Path(output_dir)
 
+    mnist_val_eval = medmnist.Evaluator(f'{cfg.dataset}mnist', 'val')
+
     start_epoch = 0
 
     tags = [cfg.model, cfg.dataset] + cfg.wandb.add_tags
@@ -143,18 +146,9 @@ def main(cfg: ExperimentConfig):
     else:
         wandb_id = wandb.util.generate_id()
 
-    wandb.init(
-        project=cfg.wandb.project,
-        config=OmegaConf.to_object(cfg),
-        tags=tags,
-        resume="allow",
-        id=wandb_id
-    )
+    wandb.init(project=cfg.wandb.project, config=OmegaConf.to_object(cfg), tags=tags, resume="allow", id=wandb_id)
 
-    checkpoint = {
-        "cfg": cfg,
-        "wandb_id": wandb_id
-    }
+    checkpoint = {"cfg": cfg, "wandb_id": wandb_id}
 
     log.info(f"Starting training with learning rate {lr_scheduler.get_last_lr()[0]:f}")
     log.info(f"Effective batch size: {cfg.batch_size * cfg.iter_size}")
@@ -176,9 +170,13 @@ def main(cfg: ExperimentConfig):
             val_auc = auc_fn(targets, outputs)
 
             pd.DataFrame(outputs.cpu()).to_csv(
-                (output_dir / f"{cfg.dataset}-val-{epoch}@{cfg.model}({val_auc:.2f},{val_acc:.2f}).csv"), index=False)
+                (output_dir / f"{cfg.dataset}-val-{epoch}@{cfg.model}({val_auc:.3f},{val_acc:.3f}).csv"), index=False)
 
-            log.debug(f"Validation done. AUC@{val_auc:.2f}, ACC@{val_acc:.2f}, LOSS@{val_loss:.2f}")
+            predictions = activation_fn(outputs).detach().cpu().numpy()
+
+            mnist_val_eval.evaluate(predictions, output_dir, cfg.model)
+
+            log.debug(f"Validation done. AUC@{val_auc:.3f}, ACC@{val_acc:.3f}, LOSS@{val_loss:.3f}")
             wandb.log({"val_auc": val_auc, "val_acc": val_acc, "val_loss": val_loss}, epoch)
 
             if best_auc < val_auc:
@@ -186,7 +184,7 @@ def main(cfg: ExperimentConfig):
                 best_auc = val_auc
                 best_model = copy.deepcopy(stage_config.model)
 
-                log.info(f"Current best model in epoch {best_epoch}: AUC@{best_auc:.2f}")
+                log.info(f"Current best model in epoch {best_epoch}: AUC@{best_auc:.3f}")
 
             checkpoint["model"] = train_cfg.model.state_dict(),
             checkpoint["optimizer"]: train_cfg.optimizer.state_dict()
@@ -201,11 +199,9 @@ def main(cfg: ExperimentConfig):
     del train_dataset
     del val_dataset
 
-    state = {
-        "model": best_model.state_dict()
-    }
+    state = {"model": best_model.state_dict()}
 
-    torch.save(state, (output_dir / f"model_{best_epoch}@{best_auc:.2f}AUC.pth"))
+    torch.save(state, (output_dir / f"model_{best_epoch}@{best_auc:.3f}AUC.pth"))
 
     test_dataset = init_dataset(split="test")
 
@@ -218,9 +214,13 @@ def main(cfg: ExperimentConfig):
     test_acc = acc_fn(targets, outputs)
 
     pd.DataFrame(outputs.cpu()).to_csv(
-        (output_dir / f"{cfg.dataset}-test@{cfg.model}({test_auc:.2f},{test_acc:.2f}).csv"), index=False)
+        (output_dir / f"{cfg.dataset}-test@{cfg.model}({test_auc:.3f},{test_acc:.3f}).csv"), index=False)
 
-    log.info(f"Model evaluated: AUC@{test_auc:.2f} & ACC@{test_acc:.2f} (& LOSS@{test_loss:.2f})")
+    predictions = activation_fn(outputs).detach().cpu().numpy()
+
+    medmnist.Evaluator(f'{cfg.dataset}mnist', 'test').evaluate(predictions, output_dir, cfg.model)
+
+    log.info(f"Model evaluated: AUC@{test_auc:.3f} & ACC@{test_acc:.3f} (& LOSS@{test_loss:.3f})")
     wandb.log({"test_auc": test_auc, "test_acc": test_acc, "test_loss": test_loss})
 
     wandb.finish()
@@ -252,7 +252,7 @@ def train(cfg: TrainingConfig):
 
     train_loss = loss_sum / len(cfg.data_loader)
 
-    log.debug(f"Training loss this epoch: {train_loss:.2f}")
+    log.debug(f"Training loss this epoch: {train_loss:.3f}")
 
     return train_loss
 
@@ -275,11 +275,11 @@ def evaluate(cfg: EvaluationConfig, leave_pbar: bool = True):
             criterion_targets = cfg.targets_criterion_transform(targets)
             loss_sum += cfg.criterion(outputs, criterion_targets)
 
-            tensor_index_start = i * cfg.data_loader.batch_size
-            tensor_index_stop = tensor_index_start + min(cfg.data_loader.batch_size, len(outputs))
+            idx_start = i * cfg.data_loader.batch_size
+            idx_stop = idx_start + min(cfg.data_loader.batch_size, len(outputs))
 
-            targets_t[tensor_index_start:tensor_index_stop] = targets
-            outputs_t[tensor_index_start:tensor_index_stop] = outputs
+            targets_t[idx_start:idx_stop] = targets
+            outputs_t[idx_start:idx_stop] = outputs
 
     return targets_t, outputs_t, loss_sum / len(cfg.data_loader)
 
