@@ -6,7 +6,7 @@ from pathlib import Path
 
 import hydra
 import medmnist
-import pandas as pd
+import torch
 import wandb
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
@@ -22,7 +22,6 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from configs import ExperimentConfig, StageConfig, TrainingConfig, EvaluationConfig
 from dataset import NpzVisionDataset, get_dataset_problem, get_dataset
-from measures import *
 from tuning import get_tuned_model
 
 log = logging.getLogger("EXPERIMENT")
@@ -112,18 +111,6 @@ def main(cfg: ExperimentConfig):
     best_auc = 0
     best_epoch = 0
 
-    auc_fn = roc_auc_score
-    acc_fn = non_multilabel_accuracy_measure
-
-    match problem_type:
-        case "binary":
-            auc_fn = binary_auc_measure
-        case "multiclass":
-            auc_fn = multiclass_auc_measure
-        case "multilabel":
-            auc_fn = multilabel_auc_measure
-            acc_fn = partial(multilabel_accuracy_measure, exact=False)
-
     output_dir = cfg.paths.output_dir if cfg.paths.output_dir else os.getcwd()
     output_dir = Path(output_dir)
 
@@ -166,15 +153,11 @@ def main(cfg: ExperimentConfig):
             log.debug("Starting validation")
 
             targets, outputs, val_loss = evaluate(eval_cfg, leave_pbar=False)
-            val_acc = acc_fn(targets, outputs)
-            val_auc = auc_fn(targets, outputs)
-
-            pd.DataFrame(outputs.cpu()).to_csv(
-                (output_dir / f"{cfg.dataset}-val-{epoch}@{cfg.model}({val_auc:.3f},{val_acc:.3f}).csv"), index=False)
-
             predictions = activation_fn(outputs).detach().cpu().numpy()
 
-            mnist_val_eval.evaluate(predictions, output_dir, cfg.model)
+            val_auc, val_acc = mnist_val_eval.evaluate(predictions, output_dir, cfg.model)
+            eval_file = output_dir / f'{cfg.dataset}mnist_val_[AUC]{val_auc:.3f}_[ACC]{val_acc:.3f}@{cfg.model}.csv'
+            (output_dir / f'{cfg.model}-{cfg.dataset}-val-{epoch}@{val_auc:.3f}.csv').symlink_to(eval_file)
 
             log.debug(f"Validation done. AUC@{val_auc:.3f}, ACC@{val_acc:.3f}, LOSS@{val_loss:.3f}")
             wandb.log({"val_auc": val_auc, "val_acc": val_acc, "val_loss": val_loss}, epoch)
@@ -201,7 +184,7 @@ def main(cfg: ExperimentConfig):
 
     state = {"model": best_model.state_dict()}
 
-    torch.save(state, (output_dir / f"model_{best_epoch}@{best_auc:.3f}AUC.pth"))
+    torch.save(state, (output_dir / f"{cfg.model}-{best_epoch}@{best_auc:.3f}.pth"))
 
     test_dataset = init_dataset(split="test")
 
@@ -209,18 +192,13 @@ def main(cfg: ExperimentConfig):
     eval_cfg.model = best_model
 
     targets, outputs, test_loss = evaluate(eval_cfg)
-
-    test_auc = auc_fn(targets, outputs)
-    test_acc = acc_fn(targets, outputs)
-
-    pd.DataFrame(outputs.cpu()).to_csv(
-        (output_dir / f"{cfg.dataset}-test@{cfg.model}({test_auc:.3f},{test_acc:.3f}).csv"), index=False)
-
     predictions = activation_fn(outputs).detach().cpu().numpy()
 
-    medmnist.Evaluator(f'{cfg.dataset}mnist', 'test').evaluate(predictions, output_dir, cfg.model)
+    test_auc, test_acc = medmnist.Evaluator(f'{cfg.dataset}mnist', 'test').evaluate(predictions, output_dir, cfg.model)
+    output_dir / f'{cfg.dataset}mnist_test_[AUC]{val_auc:.3f}_[ACC]{val_acc:.3f}@{cfg.model}.csv'
+    (output_dir / f'{cfg.model}-{cfg.dataset}-test-{epoch}@{val_auc:.3f}.csv').symlink_to(eval_file)
 
-    log.info(f"Model evaluated: AUC@{test_auc:.3f} & ACC@{test_acc:.3f} (& LOSS@{test_loss:.3f})")
+    log.info(f"Model evaluated: AUC@{test_auc:.3f} & ACC@{test_acc:.3f} & LOSS@{test_loss:.3f}")
     wandb.log({"test_auc": test_auc, "test_acc": test_acc, "test_loss": test_loss})
 
     wandb.finish()
